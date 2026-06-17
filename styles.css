@@ -97,11 +97,13 @@ body{
 @media (max-width:760px){
   .clock{ font-size:30px; } .timer-time{ font-size:38px; }
   .panel{ border-radius:14px; padding:12px 14px; }
-  /* 顶部两块用安全区内边距避开刘海;限定最大宽度,避免左右两块在窄屏相撞 */
+  /* 顶部两块用安全区内边距避开刘海;限定最大宽度并留出中间间隙,避免相撞 */
   .topleft{ top:calc(14px + env(safe-area-inset-top)); left:calc(14px + env(safe-area-inset-left));
-    min-width:0; max-width:40vw; }
+    min-width:0; max-width:38vw; }
   .topright{ top:calc(14px + env(safe-area-inset-top)); right:calc(14px + env(safe-area-inset-right));
-    min-width:0; max-width:52vw; }
+    min-width:0; max-width:48vw; }
+  .clock{ line-height:1; }
+  .muted{ font-size:12px; } .countdown{ font-size:12px; margin-top:6px; }
   .quote{ display:none; }
   .timer-btns{ gap:6px; } .btn{ padding:8px 12px; font-size:13px; }
   .timer-presets{ margin-top:8px; }
@@ -113,11 +115,13 @@ body{
   .gate-title{ font-size:34px; } .gate-sub{ font-size:13px; padding:0 16px; }
   .enter{ padding:14px 42px; }   /* 入口按钮保持大点击区,方便手指点 */
 }
-/* 窄屏小手机(竖屏):再紧凑一档 */
+/* 窄屏小手机(竖屏):再紧凑一档,确保番茄钟内容不溢出窄面板 */
 @media (max-width:430px){
-  .clock{ font-size:26px; } .timer-time{ font-size:34px; }
-  .topleft,.topright{ padding:10px 12px; }
-  .timer-mode{ font-size:12px; }
+  .clock{ font-size:26px; } .timer-time{ font-size:32px; margin:4px 0 8px; }
+  .topleft{ max-width:36vw; padding:10px 12px; }
+  .topright{ max-width:50vw; padding:10px 12px; }
+  .timer-mode{ font-size:11.5px; }
+  .timer-btns{ flex-wrap:wrap; gap:6px; } .btn{ padding:7px 11px; font-size:12.5px; }
   .chip{ padding:6px 9px; font-size:11px; }
   .iconbtn{ width:38px; height:38px; font-size:17px; }
   .dock{ gap:6px; padding:8px 10px; }
