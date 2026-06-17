@@ -17,6 +17,21 @@
   // —— 仅 ?edit 激活 ——
   if (!/[?&]edit(\b|=)/.test(location.search)) return;
 
+  // —— 手机/触屏:可视化编辑器依赖鼠标拖拽,不适用;给提示后退出 ——
+  const smallTouch = window.matchMedia("(max-width:760px)").matches ||
+    (("ontouchstart" in window) && !window.matchMedia("(pointer:fine)").matches);
+  if (smallTouch) {
+    const tip = document.createElement("div");
+    tip.textContent = "🖥 可视化编辑器请在电脑上打开（?edit）";
+    tip.style.cssText = "position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));" +
+      "transform:translateX(-50%);z-index:30;max-width:88vw;text-align:center;padding:10px 16px;" +
+      "border-radius:999px;background:rgba(28,16,34,.85);color:#fff3e2;font:13px/1.4 sans-serif;" +
+      "-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,210,160,.2);";
+    if (document.body) document.body.appendChild(tip);
+    else document.addEventListener("DOMContentLoaded", () => document.body.appendChild(tip));
+    return;
+  }
+
   // 与 scene3d.js 对应的换算基准(拖物体写回 PARAMS 时用)
   const LAMP_BASE_Y = 2.12, MOON_BASE_R = 1.4, RUG_BASE_W = 4.6, RUG_BASE_D = 3.4;
   const LS_KEY = "lofi-editor";

@@ -93,15 +93,35 @@ body{
 .enter:hover{ transform:translateY(-2px); filter:brightness(1.08); }
 .gate-hint{ margin-top:22px; color:var(--muted); font-size:12.5px; opacity:.8; }
 
-/* ===== 响应式 ===== */
+/* ===== 响应式 / 移动端 ===== */
 @media (max-width:760px){
-  .clock{ font-size:32px; } .timer-time{ font-size:40px; }
-  .topleft,.topright{ min-width:0; padding:12px 14px; }
-  .topleft{ top:16px; left:16px; } .topright{ top:16px; right:16px; }
+  .clock{ font-size:30px; } .timer-time{ font-size:38px; }
+  .panel{ border-radius:14px; padding:12px 14px; }
+  /* 顶部两块用安全区内边距避开刘海;限定最大宽度,避免左右两块在窄屏相撞 */
+  .topleft{ top:calc(14px + env(safe-area-inset-top)); left:calc(14px + env(safe-area-inset-left));
+    min-width:0; max-width:40vw; }
+  .topright{ top:calc(14px + env(safe-area-inset-top)); right:calc(14px + env(safe-area-inset-right));
+    min-width:0; max-width:52vw; }
   .quote{ display:none; }
-  .dock{ bottom:18px; gap:8px; padding:10px 14px; }
-  .slider{ width:64px; }
-  .gate-title{ font-size:34px; }
+  .timer-btns{ gap:6px; } .btn{ padding:8px 12px; font-size:13px; }
+  .timer-presets{ margin-top:8px; }
+  /* 底部控制栏:避开底部手势条,限宽不超出屏幕 */
+  .dock{ bottom:calc(16px + env(safe-area-inset-bottom)); gap:8px; padding:9px 12px;
+    max-width:calc(100vw - 24px); }
+  .slider{ width:54px; }
+  .nowplaying{ display:none; }
+  .gate-title{ font-size:34px; } .gate-sub{ font-size:13px; padding:0 16px; }
+  .enter{ padding:14px 42px; }   /* 入口按钮保持大点击区,方便手指点 */
+}
+/* 窄屏小手机(竖屏):再紧凑一档 */
+@media (max-width:430px){
+  .clock{ font-size:26px; } .timer-time{ font-size:34px; }
+  .topleft,.topright{ padding:10px 12px; }
+  .timer-mode{ font-size:12px; }
+  .chip{ padding:6px 9px; font-size:11px; }
+  .iconbtn{ width:38px; height:38px; font-size:17px; }
+  .dock{ gap:6px; padding:8px 10px; }
+  .slider{ width:44px; }
 }
 @media (prefers-reduced-motion:reduce){
   .grain{ animation:none; }

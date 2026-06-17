@@ -132,6 +132,7 @@ window.Scene3D = (function () {
     buildAtmosphere();
 
     window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", () => setTimeout(onResize, 200));
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) { running = false; }
       else if (!running) { running = true; clock.getDelta(); animate(); }
@@ -145,13 +146,21 @@ window.Scene3D = (function () {
     const c = PARAMS.camera;
     camBase.set(c.posX, c.posY, c.posZ);
     camTarget.set(c.targetX, c.targetY, c.targetZ);
-    const a = window.innerWidth / window.innerHeight;
-    camera = new T.OrthographicCamera(-c.frustum * a, c.frustum * a, c.frustum, -c.frustum, 0.1, 100);
+    camera = new T.OrthographicCamera(-c.frustum, c.frustum, c.frustum, -c.frustum, 0.1, 100);
+    applyFrustum(camera, c.frustum);
     camera.zoom = c.zoom;
     camera.position.copy(camBase);
     camera.lookAt(camTarget);
     camera.updateProjectionMatrix();
     refs.camera = camera;
+  }
+
+  // 正交视锥自适应:横屏(a>=1)按高度适配;竖屏(a<1,手机)按宽度适配,
+  // 否则窄高屏会把房间左右裁掉。两种情况都保证房间完整显示。
+  function applyFrustum(cam, f) {
+    const a = window.innerWidth / window.innerHeight;
+    if (a >= 1) { cam.left = -f * a; cam.right = f * a; cam.top = f; cam.bottom = -f; }
+    else { cam.left = -f; cam.right = f; cam.top = f / a; cam.bottom = -f / a; }
   }
 
   function setupLights() {
@@ -592,10 +601,7 @@ window.Scene3D = (function () {
 
   function onResize() {
     if (!renderer || !camera) return;
-    const a = window.innerWidth / window.innerHeight;
-    const f = PARAMS.camera.frustum;
-    camera.left = -f * a; camera.right = f * a;
-    camera.top = f; camera.bottom = -f;
+    applyFrustum(camera, PARAMS.camera.frustum);
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
@@ -612,9 +618,7 @@ window.Scene3D = (function () {
         camBase.set(c.posX, c.posY, c.posZ);
         camTarget.set(c.targetX, c.targetY, c.targetZ);
         camera.zoom = c.zoom;
-        const a = window.innerWidth / window.innerHeight;
-        camera.left = -c.frustum * a; camera.right = c.frustum * a;
-        camera.top = c.frustum; camera.bottom = -c.frustum;
+        applyFrustum(camera, c.frustum);
         camera.updateProjectionMatrix();
         break;
       }
