@@ -254,9 +254,13 @@ function initAudio() {
   // 混响
   Audio.reverb = ctx.createConvolver();
   Audio.reverb.buffer = makeImpulse(2.4, 2.2);
+  // 低通:滤掉白噪声卷积核带来的高频"沙/电流"毛刺,只留温暖的混响
+  const revLP = ctx.createBiquadFilter();
+  revLP.type = "lowpass"; revLP.frequency.value = 3200;
   const revGain = ctx.createGain();
-  revGain.gain.value = 0.5;
-  Audio.reverb.connect(revGain);
+  revGain.gain.value = 0.42;
+  Audio.reverb.connect(revLP);
+  revLP.connect(revGain);
   revGain.connect(Audio.musicBus);
   Audio._revIn = Audio.reverb; // 送入点
 
@@ -371,8 +375,8 @@ function scheduleStep(step, t, sec16) {
   if (step === 0 || step === 8) kick(t);
   // 2、4 拍军鼓(柔)
   if (step === 4 || step === 12) noiseHit(t, 0.18, 0.1, 1200, 6000);
-  // 反拍 hi-hat
-  if (step % 2 === 1) noiseHit(t, 0.05, 0.035, 6000, 12000);
+  // 反拍 hi-hat(调暗调轻,减少高频"电流"感)
+  if (step % 2 === 1) noiseHit(t, 0.045, 0.02, 5000, 8500);
 
   // 旋律:稀疏,落在拍点上
   const onBeat = step % 4 === 0;
@@ -384,12 +388,7 @@ function scheduleStep(step, t, sec16) {
     g.connect(Audio._revIn);
   }
 
-  // 黑胶噪点
-  if (Math.random() < 0.55) {
-    const n = 1 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < n; i++)
-      noiseHit(t + Math.random() * sec16, 0.004, rand(0.02, 0.06), 1500, 9000);
-  }
+  // 黑胶噪点(已移除:用户不喜欢这种"滋滋"静电声)
 }
 function bassNote(m, t, dur) {
   const ctx = Audio.ctx;
