@@ -41,6 +41,9 @@
     { group: "camera", label: "相机", mode: "apply", note: "位置/角度用鼠标拖,滚轮缩放", fields: [
       ["frustum", "视野", 3, 12, 0.1], ["zoom", "缩放", 0.3, 3, 0.01],
     ]},
+    { group: "backdrop", label: "窗外 / 地平线", mode: "apply", note: "房间在高楼:地平线越低,楼越高(负值=地板以下;墙高约6)", fields: [
+      ["horizonY", "地平线高度", -40, 0, 0.5],
+    ]},
     { group: "lighting", label: "灯光 / 氛围", mode: "apply", fields: [
       ["hemiInt", "半球光", 0, 2, 0.01], ["ambInt", "环境光", 0, 2, 0.01],
       ["moonInt", "月光强度", 0, 3, 0.01], ["moonColor", "月光色", "color"],

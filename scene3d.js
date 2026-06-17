@@ -37,6 +37,10 @@ window.Scene3D = (function () {
     person: { x: -0.3, z: -1.85, scale: 1, bodyColor: 0x2e3350, hairColor: 0x241a22 },
     rug: { x: -0.4, z: -1.4, w: 4.6, d: 3.4, color: 0x5a3b3a },
     moon: { x: 5, y: 11.5, z: -22, size: 1.4, emi: 1.3 },
+    // 窗外地平线高度:房间在高楼,地平线/城市应远在地板之下。
+    // horizonY = 天际线(城市基座/远地面/天空亮带)的世界 Y。房间地板在 y=0,墙高约 6,
+    // 取 -22 ≈ 地板下约 3.7 个房间高度(可在编辑器"窗外/地平线"里实时调)。
+    backdrop: { horizonY: -22 },
   };
 
   /* —— 不暴露给编辑器的固定调色 —— */
@@ -130,6 +134,7 @@ window.Scene3D = (function () {
     buildMoon();
     refs.cityGroup = buildCity(PARAMS.city); scene.add(refs.cityGroup);
     buildAtmosphere();
+    applyBackdrop();   // 城市/天空/远地面 下移到 horizonY,形成高楼俯瞰的地平线
 
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", () => setTimeout(onResize, 200));
@@ -217,10 +222,21 @@ window.Scene3D = (function () {
     sky.renderOrder = -1;
     scene.add(sky);
     // 远处地面:给背景下方铺色(远处融入雾与天际)
-    const ground = new T.Mesh(new T.PlaneGeometry(120, 120), mat(0x0c1226, { rough: 1 }));
+    const ground = new T.Mesh(new T.PlaneGeometry(400, 400), mat(0x0c1226, { rough: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.3, 0);
     ground.castShadow = false; ground.receiveShadow = false;
     scene.add(ground);
+    refs.sky = sky; refs.ground = ground;
+  }
+
+  // 把"地平线"(天空亮带 / 远地面 / 窗外城市)整体下移到 backdrop.horizonY,
+  // 营造"房间在高楼、城市远在脚下"的观感。可由编辑器实时调用。
+  function applyBackdrop() {
+    const h = PARAMS.backdrop.horizonY;
+    // 天空亮带在球心略下方(贴图 0.52 处),把球整体下移让亮带落到 h 附近
+    if (refs.sky) refs.sky.position.y = h + 2.4;
+    if (refs.ground) refs.ground.position.y = h;
+    if (refs.cityGroup) refs.cityGroup.position.y = h;
   }
 
   /* ============================== 房间 ============================== */
@@ -622,6 +638,7 @@ window.Scene3D = (function () {
         camera.updateProjectionMatrix();
         break;
       }
+      case "backdrop": applyBackdrop(); break;
       case "lighting": {
         const l = PARAMS.lighting;
         refs.hemiLight.intensity = l.hemiInt;
