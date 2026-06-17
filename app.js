@@ -16,76 +16,9 @@ const EXAM_LABEL = "考研初试";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
+const RAIN_MAX = 0.05; // 雨声(白噪声)最大增益:滑块 100% 时只到此值
 
-/* ============================== 场景生成 ============================== */
-function buildScene() {
-  const SVGNS = "http://www.w3.org/2000/svg";
-  const stars = $("stars");
-  // 星星
-  for (let i = 0; i < 70; i++) {
-    const c = document.createElementNS(SVGNS, "circle");
-    c.setAttribute("cx", rand(20, 1580).toFixed(0));
-    c.setAttribute("cy", rand(20, 360).toFixed(0));
-    c.setAttribute("r", rand(0.6, 1.8).toFixed(2));
-    c.setAttribute("fill", "#fff");
-    c.setAttribute("class", "twinkle");
-    c.style.setProperty("--d", rand(2, 6).toFixed(2) + "s");
-    c.style.animationDelay = rand(0, 4).toFixed(2) + "s";
-    stars.appendChild(c);
-  }
-
-  // 城市天际线:一排高低不一的楼,带窗户灯光
-  const city = $("city");
-  let x = -20;
-  while (x < 1620) {
-    const w = rand(60, 130);
-    const h = rand(120, 300);
-    const top = 600 - h;
-    const b = document.createElementNS(SVGNS, "rect");
-    b.setAttribute("x", x.toFixed(0));
-    b.setAttribute("y", top.toFixed(0));
-    b.setAttribute("width", w.toFixed(0));
-    b.setAttribute("height", h.toFixed(0));
-    b.setAttribute("fill", Math.random() > 0.5 ? "#160f28" : "#1b1330");
-    city.appendChild(b);
-
-    // 窗户灯
-    for (let wy = top + 14; wy < 596; wy += 22) {
-      for (let wx = x + 10; wx < x + w - 12; wx += 18) {
-        if (Math.random() > 0.62) {
-          const win = document.createElementNS(SVGNS, "rect");
-          win.setAttribute("x", wx.toFixed(0));
-          win.setAttribute("y", wy.toFixed(0));
-          win.setAttribute("width", "8");
-          win.setAttribute("height", "11");
-          win.setAttribute("fill", Math.random() > 0.3 ? "#ffcf87" : "#ff9d6b");
-          if (Math.random() > 0.7) {
-            win.setAttribute("class", "twinkle");
-            win.style.setProperty("--d", rand(3, 7).toFixed(2) + "s");
-            win.style.animationDelay = rand(0, 5).toFixed(2) + "s";
-          }
-          city.appendChild(win);
-        }
-      }
-    }
-    x += w + rand(2, 10);
-  }
-
-  // 漂浮微尘
-  const dust = $("dust");
-  for (let i = 0; i < 18; i++) {
-    const d = document.createElementNS(SVGNS, "circle");
-    d.setAttribute("cx", rand(280, 1320).toFixed(0));
-    d.setAttribute("cy", rand(620, 760).toFixed(0));
-    d.setAttribute("r", rand(1, 2.6).toFixed(2));
-    d.setAttribute("class", "dust");
-    d.setAttribute("opacity", "0");
-    d.style.setProperty("--fx", rand(-30, 30).toFixed(0) + "px");
-    d.style.setProperty("--fd", rand(8, 16).toFixed(1) + "s");
-    d.style.animationDelay = rand(0, 10).toFixed(1) + "s";
-    dust.appendChild(d);
-  }
-}
+/* 场景(房间/灯光/家具/夜景/雨)已迁移到 scene3d.js —— Three.js 等距 3D 房间 */
 
 /* ============================== 时钟 / 倒计时 / 语录 ============================== */
 function tickClock() {
@@ -268,7 +201,7 @@ function initAudio() {
 
   // 雨声:循环噪声 → 带通 → rainGain → master
   Audio.rainGain = ctx.createGain();
-  Audio.rainGain.gain.value = 0.45;
+  Audio.rainGain.gain.value = 0.45 * RAIN_MAX;
   Audio.rainGain.connect(Audio.master);
   startRainNoise();
 
@@ -419,7 +352,7 @@ function setMusicVol(v) {
 }
 function setRainVol(v) {
   if (Audio.rainGain)
-    Audio.rainGain.gain.setTargetAtTime(v, Audio.ctx.currentTime, 0.1);
+    Audio.rainGain.gain.setTargetAtTime(v * RAIN_MAX, Audio.ctx.currentTime, 0.1);
 }
 function toggleMusic() {
   Audio.musicOn = !Audio.musicOn;
@@ -432,51 +365,10 @@ function toggleRain() {
   const btn = $("rainToggle");
   btn.classList.toggle("off", !Audio.rainOn);
   setRainVol(Audio.rainOn ? $("rainVol").value / 100 : 0);
+  if (window.Scene3D) Scene3D.setRain(Audio.rainOn); // 联动窗外雨
 }
 
-/* ============================== 雨滴 canvas ============================== */
-function initRainCanvas() {
-  const cv = $("rainCanvas");
-  const ctx = cv.getContext("2d");
-  let drops = [];
-  function resize() {
-    cv.width = window.innerWidth;
-    cv.height = window.innerHeight;
-    const n = Math.floor((cv.width * cv.height) / 9000);
-    drops = [];
-    for (let i = 0; i < n; i++) {
-      drops.push({
-        x: Math.random() * cv.width,
-        y: Math.random() * cv.height,
-        len: rand(8, 22),
-        sp: rand(6, 13),
-        a: rand(0.06, 0.22),
-      });
-    }
-  }
-  resize();
-  window.addEventListener("resize", resize);
-
-  function frame() {
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    if (Audio.rainOn !== false) {
-      ctx.strokeStyle = "#bcd6ff";
-      ctx.lineWidth = 1.1;
-      for (const d of drops) {
-        ctx.globalAlpha = d.a;
-        ctx.beginPath();
-        ctx.moveTo(d.x, d.y);
-        ctx.lineTo(d.x - 1.5, d.y + d.len);
-        ctx.stroke();
-        d.y += d.sp; d.x -= 0.6;
-        if (d.y > cv.height) { d.y = -d.len; d.x = Math.random() * cv.width; }
-      }
-      ctx.globalAlpha = 1;
-    }
-    requestAnimationFrame(frame);
-  }
-  frame();
-}
+/* 雨改由 scene3d.js 的 3D 粒子实现(随雨声开关显隐,见 toggleRain) */
 
 /* ============================== 启动 / 事件绑定 ============================== */
 function enter() {
@@ -534,8 +426,7 @@ function bindUI() {
 }
 
 function main() {
-  buildScene();
-  initRainCanvas();
+  if (window.Scene3D) Scene3D.init();
   bindUI();
   renderTimer();
   tickClock();

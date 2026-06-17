@@ -1,0 +1,708 @@
+"use strict";
+
+/* =========================================================================
+   夜间自习室 · scene3d.js
+   Three.js 等距 3D 自习室(冷暖对比)
+   - OrthographicCamera 正交等距视角(固定,不跟鼠标;仅极缓慢自动微动)
+   - L 形切角房间 + 后墙开窗,窗外夜空 / 月亮 / 城市 / 雨
+   - 冷暖对比布光:冷色月光+环境光 / 暖色台灯点光源;PCF 软阴影
+   - 家具摆件:书桌 椅子 台灯 笔电 书堆 马克杯 盆栽 地毯 戴耳机的人 小床
+   - 氛围:窗外雨(随雨声开关显隐)、灯光微尘、马克杯蒸汽
+
+   所有视觉参数集中在 PARAMS(editor.js 通过 Scene3D.params 读写,改完调
+   apply()/rebuild()),并保存对象引用到 refs。不调用 apply 时,build 使用
+   PARAMS 的默认值 —— 即原先写死的数值,所以非编辑模式渲染结果与之前一致。
+
+   挂到 window.Scene3D = { init, setRain, params, apply, rebuild,
+                           refs, three, setDrift, addFrameCallback }
+   ========================================================================= */
+
+window.Scene3D = (function () {
+  const T = window.THREE;
+  const R = (a, b) => a + Math.random() * (b - a);
+
+  /* —— 可调参数(editor 实时改这里 + 调 apply/rebuild;也是导出的对象) —— */
+  const PARAMS = {
+    camera: { posX: 11, posY: 9, posZ: 11, targetX: 0, targetY: 2.2, targetZ: -1, frustum: 6.6, zoom: 1, drift: true },
+    lighting: {
+      hemiInt: 0.5, ambInt: 0.35,
+      moonInt: 1.05, moonColor: 0x9fc0ff, moonX: 3, moonY: 10, moonZ: -14,
+      screenInt: 0.5, exposure: 1.1,
+      fogColor: 0x16223f, fogDensity: 0.02,
+    },
+    lamp: { x: -1.85, y: 0, z: -3.5, scale: 1, lightInt: 2.0, lightColor: 0xffb070, bulbEmi: 2.2, shadeColor: 0xff9d57 },
+    city: { count: 28, rInner: 13, rOuter: 22, hMin: 2.5, hMax: 8, wMin: 1.4, wMax: 2.6, winChance: 0.15 },
+    bed: { x: -3.65, z: 0.5, scale: 1, frameColor: 0x39303f, mattressColor: 0x66739c },
+    quilt: { color: 0xb87a64, puff: 1, drape: 1, segments: 4, skew: 0.12 },
+    person: { x: -0.3, z: -1.85, scale: 1, bodyColor: 0x2e3350, hairColor: 0x241a22 },
+    rug: { x: -0.4, z: -1.4, w: 4.6, d: 3.4, color: 0x5a3b3a },
+    moon: { x: 5, y: 11.5, z: -22, size: 1.4, emi: 1.3 },
+  };
+
+  /* —— 不暴露给编辑器的固定调色 —— */
+  const COL = {
+    floor: 0x47403a,
+    wallBack: 0x2b3152, wallLeft: 0x252a45, wallTrim: 0x1b2038,
+    desk: 0x6b4f37, deskLeg: 0x3a2d22,
+    chair: 0x33384e,
+    lampArm: 0x20242f,
+    laptop: 0x2a2e3c, screen: 0x8fb6ff,
+    mug: 0xc06a52, plantPot: 0x8a5a44, leaf: 0x3f7a55,
+    phones: 0x14181f,
+    moon: 0xeaf1ff,
+    rain: 0xa9c4ff, dust: 0xffe6bd, steam: 0xdfe7f5,
+  };
+
+  /* —— 台灯 group 原点设在底座中心;地毯/月亮基准尺寸用于换算 scale —— */
+  const LAMP_BASE_Y = 2.12;
+  const RUG_BASE_W = 4.6, RUG_BASE_D = 3.4;
+  const MOON_BASE_R = 1.4;
+
+  let renderer, scene, camera, clock;
+  let rain = null, dust = null, steam = null;
+  let running = false, reduce = false;
+  let driftEnabled = PARAMS.camera.drift;
+  const frameCallbacks = [];
+  const refs = {};
+  const camBase = new T.Vector3();
+  const camTarget = new T.Vector3();
+
+  /* —— 材质/几何小工具 —— */
+  function mat(color, o) {
+    o = o || {};
+    return new T.MeshStandardMaterial({
+      color: color,
+      roughness: o.rough != null ? o.rough : 0.88,
+      metalness: o.metal != null ? o.metal : 0.0,
+      flatShading: !!o.flat,
+      emissive: o.emissive != null ? o.emissive : 0x000000,
+      emissiveIntensity: o.emi != null ? o.emi : 1,
+    });
+  }
+  function box(w, h, d, color, o) {
+    o = o || {};
+    const m = new T.Mesh(new T.BoxGeometry(w, h, d), mat(color, o));
+    m.castShadow = o.cast !== false;
+    m.receiveShadow = o.recv !== false;
+    return m;
+  }
+  function place(obj, x, y, z) { obj.position.set(x, y, z); return obj; }
+  function disposeObj(o) {
+    o.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) [].concat(c.material).forEach((m) => m.dispose());
+    });
+  }
+
+  /* ============================== 初始化 ============================== */
+  function init() {
+    const canvas = document.getElementById("scene3d");
+    if (!T || !canvas) {
+      console.warn("[Scene3D] Three.js 或 #scene3d 画布缺失,跳过 3D 场景");
+      return;
+    }
+    reduce = window.matchMedia && matchMedia("(prefers-reduced-motion:reduce)").matches;
+
+    renderer = new T.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.outputEncoding = T.sRGBEncoding;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = PARAMS.lighting.exposure;
+
+    scene = new T.Scene();
+    scene.background = new T.Color(0x05070f);
+    scene.fog = new T.FogExp2(PARAMS.lighting.fogColor, PARAMS.lighting.fogDensity);
+
+    clock = new T.Clock();
+    refs.renderer = renderer; refs.scene = scene;
+
+    setupCamera();
+    setupLights();
+    buildBackdrop();
+    buildRoom();
+    buildFurniture();
+    buildLamp();
+    buildBed();
+    buildPerson();
+    buildMoon();
+    refs.cityGroup = buildCity(PARAMS.city); scene.add(refs.cityGroup);
+    buildAtmosphere();
+
+    window.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) { running = false; }
+      else if (!running) { running = true; clock.getDelta(); animate(); }
+    });
+
+    running = true;
+    animate();
+  }
+
+  function setupCamera() {
+    const c = PARAMS.camera;
+    camBase.set(c.posX, c.posY, c.posZ);
+    camTarget.set(c.targetX, c.targetY, c.targetZ);
+    const a = window.innerWidth / window.innerHeight;
+    camera = new T.OrthographicCamera(-c.frustum * a, c.frustum * a, c.frustum, -c.frustum, 0.1, 100);
+    camera.zoom = c.zoom;
+    camera.position.copy(camBase);
+    camera.lookAt(camTarget);
+    camera.updateProjectionMatrix();
+    refs.camera = camera;
+  }
+
+  function setupLights() {
+    const L = PARAMS.lighting;
+    // 夜间冷色环境光(天空冷 / 地面暗)
+    refs.hemiLight = new T.HemisphereLight(0x4a5a8a, 0x0a0a14, L.hemiInt);
+    scene.add(refs.hemiLight);
+    refs.ambLight = new T.AmbientLight(0x223052, L.ambInt);
+    scene.add(refs.ambLight);
+
+    // 冷色月光:从窗外斜射进来 —— 主阴影
+    const moon = new T.DirectionalLight(L.moonColor, L.moonInt);
+    moon.position.set(L.moonX, L.moonY, L.moonZ);
+    moon.target.position.set(0, 1.5, -2);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.camera.near = 1;
+    moon.shadow.camera.far = 45;
+    moon.shadow.camera.left = -10;
+    moon.shadow.camera.right = 10;
+    moon.shadow.camera.top = 10;
+    moon.shadow.camera.bottom = -10;
+    moon.shadow.bias = -0.0006;
+    scene.add(moon);
+    scene.add(moon.target);
+    refs.moonLight = moon;
+
+    // 笔电屏幕冷光(不投影)
+    const screen = new T.PointLight(COL.screen, L.screenInt, 4.5, 2);
+    screen.position.set(0.1, 2.55, -3.4);
+    scene.add(screen);
+    refs.screenLight = screen;
+  }
+
+  /* ============================== 球形背景 + 地面 ============================== */
+  function makeSkyTexture() {
+    const c = document.createElement("canvas"); c.width = 4; c.height = 256;
+    const ctx = c.getContext("2d");
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.00, "#060912"); // 天顶
+    g.addColorStop(0.40, "#0e1730");
+    g.addColorStop(0.52, "#1c2c4e"); // 地平线微亮
+    g.addColorStop(0.62, "#122039");
+    g.addColorStop(1.00, "#070a16"); // 天底
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 256);
+    return new T.CanvasTexture(c);
+  }
+  function buildBackdrop() {
+    // 球形渐变天空:包住整个房间
+    const sky = new T.Mesh(
+      new T.SphereGeometry(60, 32, 24),
+      new T.MeshBasicMaterial({ map: makeSkyTexture(), side: T.BackSide, fog: false, depthWrite: false })
+    );
+    sky.renderOrder = -1;
+    scene.add(sky);
+    // 远处地面:给背景下方铺色(远处融入雾与天际)
+    const ground = new T.Mesh(new T.PlaneGeometry(120, 120), mat(0x0c1226, { rough: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.3, 0);
+    ground.castShadow = false; ground.receiveShadow = false;
+    scene.add(ground);
+  }
+
+  /* ============================== 房间 ============================== */
+  function buildRoom() {
+    // 地板
+    const floor = new T.Mesh(new T.BoxGeometry(10, 0.3, 10), mat(COL.floor, { rough: 0.95 }));
+    floor.position.set(0, -0.15, 0);
+    floor.receiveShadow = true; floor.castShadow = false;
+    scene.add(floor);
+
+    // 地毯(可调:位置 / 尺寸 / 颜色)
+    const rugMat = mat(PARAMS.rug.color, { rough: 1 });
+    const rug = new T.Mesh(new T.BoxGeometry(RUG_BASE_W, 0.06, RUG_BASE_D), rugMat);
+    rug.position.set(PARAMS.rug.x, 0.03, PARAMS.rug.z);
+    rug.scale.set(PARAMS.rug.w / RUG_BASE_W, 1, PARAMS.rug.d / RUG_BASE_D);
+    rug.receiveShadow = true; rug.castShadow = false;
+    scene.add(rug);
+    refs.rugMesh = rug; refs.rugMat = rugMat;
+
+    const wBack = mat(COL.wallBack), wLeft = mat(COL.wallLeft);
+    const frameMat = mat(COL.wallTrim, { rough: 0.7 });
+
+    // 后墙(z=-5,朝 +z)—— 4 块拼出窗洞(x∈[-2.4,2.4], y∈[1.9,4.5])
+    const back = new T.Group();
+    const seg = (w, h, x, y) => {
+      const m = new T.Mesh(new T.BoxGeometry(w, h, 0.3), wBack);
+      m.position.set(x, y, -5); m.receiveShadow = true; m.castShadow = true; back.add(m);
+    };
+    seg(10, 1.9, 0, 0.95); seg(10, 1.5, 0, 5.25); seg(2.6, 2.6, -3.7, 3.2); seg(2.6, 2.6, 3.7, 3.2);
+    const fr = (w, h, x, y) => {
+      const m = new T.Mesh(new T.BoxGeometry(w, h, 0.12), frameMat);
+      m.position.set(x, y, -4.82); m.castShadow = true; m.receiveShadow = true; back.add(m);
+    };
+    fr(5.2, 0.18, 0, 1.9); fr(5.2, 0.18, 0, 4.5); fr(0.18, 2.6, -2.4, 3.2); fr(0.18, 2.6, 2.4, 3.2);
+    fr(0.12, 2.6, 0, 3.2); fr(4.8, 0.12, 0, 3.2);
+    scene.add(back);
+
+    // 左墙(x=-5,朝 +x)—— 整面实墙(不开窗)
+    const left = new T.Mesh(new T.BoxGeometry(0.3, 6, 10), wLeft);
+    left.position.set(-5, 3, 0); left.receiveShadow = true; left.castShadow = true;
+    scene.add(left);
+
+    // 踢脚 / 墙角暗线(增加纵深)
+    const trim = mat(COL.wallTrim, { rough: 0.9 });
+    const baseB = new T.Mesh(new T.BoxGeometry(10, 0.3, 0.34), trim);
+    place(baseB, 0, 0.15, -4.83); baseB.receiveShadow = true; scene.add(baseB);
+    const baseL = new T.Mesh(new T.BoxGeometry(0.34, 0.3, 10), trim);
+    place(baseL, -4.83, 0.15, 0); baseL.receiveShadow = true; scene.add(baseL);
+  }
+
+  /* ============================== 家具摆件(不含台灯) ============================== */
+  function buildFurniture() {
+    const g = new T.Group();
+
+    // —— 书桌(5.6 × 2.0,桌面 y=2.0)——
+    const deskTop = box(5.6, 0.18, 2.0, COL.desk, { rough: 0.7 });
+    place(deskTop, -0.2, 2.0, -3.35);
+    g.add(deskTop);
+    [[-2.6, -4.15], [2.45, -4.15], [-2.6, -2.55], [2.45, -2.55]].forEach(([x, z]) => {
+      g.add(place(box(0.16, 2.0, 0.16, COL.deskLeg, { rough: 0.8 }), x, 1.0, z));
+    });
+
+    // —— 笔记本电脑(桌中)——
+    const lapBase = box(1.4, 0.08, 0.95, COL.laptop, { rough: 0.5, metal: 0.3 });
+    place(lapBase, 0.1, 2.12, -3.35); g.add(lapBase);
+    const lapScreen = box(1.4, 0.95, 0.07, COL.laptop, { rough: 0.5, metal: 0.3 });
+    lapScreen.position.set(0.1, 2.6, -3.76); lapScreen.rotation.x = -0.32; g.add(lapScreen);
+    const scr = box(1.24, 0.8, 0.02, 0x0a0f1c, { emissive: COL.screen, emi: 0.9, rough: 1, cast: false });
+    scr.position.set(0.1, 2.62, -3.72); scr.rotation.x = -0.32; g.add(scr);
+
+    // —— 书堆(桌右后角)——
+    const bcol = [0x7a4a5a, 0x3a5a6a, 0xb98a4a, 0x4a3a6a];
+    for (let i = 0; i < 4; i++) {
+      const b = box(0.9, 0.16, 0.62, bcol[i], { rough: 0.95 });
+      b.position.set(2.0 + (i % 2) * 0.05, 2.17 + i * 0.16, -3.5 + (i % 2) * 0.04);
+      b.rotation.y = R(-0.12, 0.12); g.add(b);
+    }
+
+    // —— 马克杯(桌右前,远离笔电)——
+    const mug = new T.Mesh(new T.CylinderGeometry(0.18, 0.16, 0.34, 18), mat(COL.mug, { rough: 0.6 }));
+    place(mug, 1.45, 2.26, -2.8); mug.castShadow = true; g.add(mug);
+    const handle = new T.Mesh(new T.TorusGeometry(0.12, 0.035, 8, 16), mat(COL.mug, { rough: 0.6 }));
+    handle.position.set(1.66, 2.26, -2.8); handle.rotation.y = Math.PI / 2; g.add(handle);
+
+    // —— 盆栽(桌左前角)——
+    const pot = new T.Mesh(new T.CylinderGeometry(0.26, 0.2, 0.4, 14), mat(COL.plantPot, { rough: 0.9 }));
+    place(pot, -2.5, 2.29, -2.95); pot.castShadow = true; g.add(pot);
+    for (let i = 0; i < 5; i++) {
+      const leaf = new T.Mesh(new T.IcosahedronGeometry(R(0.18, 0.26), 0), mat(COL.leaf, { flat: true, rough: 1 }));
+      leaf.position.set(-2.5 + R(-0.18, 0.18), 2.72 + i * 0.12, -2.95 + R(-0.16, 0.16));
+      g.add(leaf);
+    }
+
+    scene.add(g);
+  }
+
+  /* —— 台灯:独立 group(可整体移动/缩放/被 TransformControls 选中);灯头处即暖光源 —— */
+  function buildLamp() {
+    const p = PARAMS.lamp;
+    const g = new T.Group();
+
+    g.add(place(box(0.5, 0.08, 0.5, COL.lampArm, { metal: 0.4, rough: 0.5 }), 0, 0, 0));        // 底座
+    g.add(place(box(0.07, 1.0, 0.07, COL.lampArm, { metal: 0.5, rough: 0.4 }), -0.2, 0.48, 0)); // 立杆
+    const arm = box(0.9, 0.07, 0.07, COL.lampArm, { metal: 0.5, rough: 0.4 });
+    arm.position.set(0.15, 0.96, 0); arm.rotation.z = -0.25; g.add(arm);
+
+    const shadeMat = mat(p.shadeColor, { rough: 0.5, emissive: 0xff8a3a, emi: 0.35 });
+    const shade = new T.Mesh(new T.ConeGeometry(0.32, 0.42, 18, 1, true), shadeMat);
+    shade.position.set(0.55, 0.88, 0); shade.rotation.x = Math.PI; shade.rotation.z = 0.5;
+    shade.castShadow = false; g.add(shade);
+
+    const bulbMat = mat(0xfff0c8, { emissive: 0xffcf87, emi: p.bulbEmi, rough: 1 });
+    const bulb = new T.Mesh(new T.SphereGeometry(0.1, 12, 12), bulbMat);
+    bulb.position.set(0.47, 0.74, 0.04); bulb.castShadow = false; g.add(bulb);
+
+    // 暖色台灯点光源(作为 group 子节点,随台灯移动/缩放)
+    const lamp = new T.PointLight(p.lightColor, p.lightInt, 13, 2);
+    lamp.position.set(0.4, 0.93, 0.05);
+    lamp.castShadow = true;
+    lamp.shadow.mapSize.set(1024, 1024);
+    lamp.shadow.camera.near = 0.2;
+    lamp.shadow.camera.far = 14;
+    lamp.shadow.bias = -0.0015;
+    g.add(lamp);
+
+    g.position.set(p.x, LAMP_BASE_Y + p.y, p.z);
+    g.scale.setScalar(p.scale);
+    scene.add(g);
+    refs.lampGroup = g; refs.lampLight = lamp; refs.lampBulbMat = bulbMat; refs.lampShadeMat = shadeMat;
+  }
+
+  /* —— 小床:靠左墙、位于小人左后侧(group 整体可调;冷床单 + 暖被子) —— */
+  function buildBed() {
+    const p = PARAMS.bed;
+    const g = new T.Group();
+    const frameMat = mat(p.frameColor, { rough: 0.9 });
+    const mattressMat = mat(p.mattressColor, { rough: 1 });
+    const boxM = (w, h, d, material) => {
+      const m = new T.Mesh(new T.BoxGeometry(w, h, d), material);
+      m.castShadow = true; m.receiveShadow = true; return m;
+    };
+    // 相对 group 原点(床中心 x,z;y 为绝对高度)
+    g.add(place(boxM(2.2, 0.5, 3.9, frameMat), 0, 0.5, 0));                      // 床箱
+    g.add(place(boxM(2.1, 0.28, 3.7, mattressMat), 0, 0.88, 0));                 // 床垫(冷)
+    g.add(place(boxM(1.8, 0.26, 0.7, mat(0xe8dfd0, { rough: 1 })), 0, 1.12, 1.55)); // 枕头(头侧)
+    g.add(place(boxM(2.2, 1.2, 0.2, frameMat), 0, 1.05, 2.05));                  // 床头板(头侧)
+
+    const quilt = buildQuilt(PARAMS.quilt);
+    g.add(quilt);
+
+    g.position.set(p.x, 0, p.z);
+    g.scale.setScalar(p.scale);
+    scene.add(g);
+    refs.bedGroup = g; refs.quiltMesh = quilt;
+    refs.bedFrameMats = [frameMat]; refs.bedMattressMat = mattressMat;
+  }
+
+  /* —— 被子:多段堆叠 + 顶面起伏 + 侧垂边 + 被角翻折(蓬松,不再像豆腐块) —— */
+  function buildQuilt(p) {
+    const g = new T.Group();
+    const m = mat(p.color, { rough: 1, flat: true });
+    const mk = (w, h, d) => {
+      const mesh = new T.Mesh(new T.BoxGeometry(w, h, d), m);
+      mesh.castShadow = true; mesh.receiveShadow = true; return mesh;
+    };
+    const zStart = -1.85, zEnd = 0.55;   // 覆盖范围:脚侧 → 近枕侧
+    const span = zEnd - zStart;
+    const n = Math.max(1, Math.round(p.segments));
+    const segLen = span / n;
+    const baseY = 1.02, width = 2.14;
+
+    for (let i = 0; i < n; i++) {
+      const zc = zStart + segLen * (i + 0.5);
+      const t = n > 1 ? i / (n - 1) : 0.5;
+      const hump = Math.sin(t * Math.PI);             // 中段隆起、两端略低
+      const h = (0.16 + 0.22 * hump) * p.puff;
+      const seg = mk(width, h, segLen * 0.98);
+      seg.position.set(0, baseY + h / 2, zc);
+      seg.rotation.x = R(-1, 1) * p.skew * 0.15;       // 轻微错位 → 褶皱感
+      g.add(seg);
+    }
+    // 左右垂边:被子挂在床沿
+    [-1, 1].forEach((s) => {
+      const dh = 0.34 * p.drape;
+      const drapeM = mk(0.07, dh, span);
+      drapeM.position.set(s * (width / 2 - 0.02), baseY - dh / 2 + 0.08, zStart + span / 2);
+      g.add(drapeM);
+    });
+    // 头侧被角翻折
+    const fold = mk(width, 0.12 * p.puff, 0.5);
+    fold.position.set(0, baseY + 0.3 * p.puff, zEnd - 0.08);
+    fold.rotation.x = -0.5;
+    g.add(fold);
+
+    return g;
+  }
+
+  /* —— 戴耳机的人:可爱 chibi 比例,坐姿背对相机面向窗(group 整体可调) —— */
+  function buildPerson() {
+    const p = PARAMS.person;
+    const g = new T.Group();
+    const skinMats = [], hairMats = [];
+    const skinMat = (rough) => { const m = mat(p.bodyColor, { rough }); skinMats.push(m); return m; };
+    const hairMat = () => { const m = mat(p.hairColor, { rough: 1 }); hairMats.push(m); return m; };
+
+    // 椅子(相对 group;x 已去掉 CX=-0.3、z 去掉 CZ=-1.85)
+    g.add(place(box(1.3, 0.18, 1.2, COL.chair, { rough: 0.8 }), 0, 1.3, 0.15));
+    g.add(place(box(1.3, 1.5, 0.18, COL.chair, { rough: 0.8 }), 0, 2.0, 0.67));
+    [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.65], [0.55, 0.65]].forEach(([x, z]) =>
+      g.add(place(box(0.12, 1.3, 0.12, COL.deskLeg, { rough: 0.8 }), x, 0.65, z)));
+
+    // 圆润小身子
+    const body = new T.Mesh(new T.SphereGeometry(0.56, 24, 20), skinMat(0.9));
+    body.position.set(0, 1.95, 0); body.scale.set(1, 1.15, 0.95); body.castShadow = true; g.add(body);
+    // 头
+    const head = new T.Mesh(new T.SphereGeometry(0.46, 28, 28), skinMat(0.85));
+    head.position.set(0, 2.86, -0.06); head.castShadow = true; g.add(head);
+    // 圆头发 + 小揪揪
+    const hair = new T.Mesh(new T.SphereGeometry(0.5, 24, 24), hairMat());
+    hair.position.set(0, 2.93, 0.05); hair.scale.set(1.04, 1.02, 0.95); hair.castShadow = true; g.add(hair);
+    const bun = new T.Mesh(new T.SphereGeometry(0.16, 16, 16), hairMat());
+    bun.position.set(0, 3.42, 0.04); bun.castShadow = true; g.add(bun);
+    // 耳机:头梁 + 两只耳罩
+    const band = new T.Mesh(new T.TorusGeometry(0.5, 0.06, 10, 24, Math.PI), mat(COL.phones, { rough: 0.5 }));
+    band.position.set(0, 2.88, -0.04); g.add(band);
+    [-0.5, 0.5].forEach((x) => {
+      const cup = new T.Mesh(new T.SphereGeometry(0.13, 18, 18), mat(COL.phones, { rough: 0.5 }));
+      cup.position.set(x, 2.84, -0.04); cup.scale.set(0.85, 1, 1); g.add(cup);
+    });
+    // 小手搭桌
+    [-0.4, 0.4].forEach((x) => {
+      const arm = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, 0.8, 12), skinMat(0.9));
+      arm.position.set(x, 2.0, -0.55); arm.rotation.x = 0.95; arm.castShadow = true; g.add(arm);
+    });
+
+    g.position.set(p.x, 0, p.z);
+    g.scale.setScalar(p.scale);
+    scene.add(g);
+    refs.personGroup = g; refs.personSkinMats = skinMats; refs.personHairMats = hairMats;
+  }
+
+  /* ============================== 窗外:月亮 / 城市 ============================== */
+  function buildMoon() {
+    const p = PARAMS.moon;
+    const moonMat = mat(COL.moon, { emissive: COL.moon, emi: p.emi, rough: 1 });
+    const moon = new T.Mesh(new T.SphereGeometry(MOON_BASE_R, 24, 24), moonMat);
+    moon.position.set(p.x, p.y, p.z); moon.scale.setScalar(p.size / MOON_BASE_R);
+    moon.castShadow = false; scene.add(moon);
+    const halo = new T.Mesh(new T.SphereGeometry(MOON_BASE_R * 1.71, 20, 20),
+      new T.MeshBasicMaterial({ color: 0xcdd9f2, transparent: true, opacity: 0.12 }));
+    halo.position.copy(moon.position); halo.scale.copy(moon.scale); scene.add(halo);
+    refs.moonMesh = moon; refs.moonMat = moonMat; refs.moonHalo = halo;
+  }
+
+  // 城市:稀疏 + 远离房间的一圈天际线(数量/距离/高度可重建)
+  function buildCity(p) {
+    const city = new T.Group();
+    for (let k = 0; k < p.count; k++) {
+      let ang;
+      do { ang = R(0, Math.PI * 2); } while (ang > 0.12 && ang < 1.45); // 跳过朝相机的开口
+      const r = R(p.rInner, p.rOuter);
+      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+      const h = R(p.hMin, p.hMax), w = R(p.wMin, p.wMax), dp = R(p.wMin, p.wMax);
+      const b = box(w, h, dp, R(0, 1) > 0.5 ? 0x0e1430 : 0x121a38, { cast: false, recv: false, rough: 1 });
+      b.position.set(x, h / 2, z); city.add(b);
+      // 朝向房间的一面点几盏窗灯
+      const dir = new T.Vector3(-x, 0, -z).normalize();
+      for (let wy = 0.7; wy < h - 0.5; wy += 0.8) {
+        if (Math.random() < p.winChance) {
+          const warm = Math.random() > 0.5;
+          const win = new T.Mesh(new T.PlaneGeometry(0.16, 0.24),
+            new T.MeshBasicMaterial({ color: warm ? 0xffcf87 : 0x6e86b8, transparent: true, opacity: R(0.4, 0.85) }));
+          win.position.set(x + dir.x * (dp / 2 + 0.02) + R(-w / 4, w / 4), wy, z + dir.z * (dp / 2 + 0.02));
+          win.lookAt(0, wy, 0);
+          city.add(win);
+        }
+      }
+    }
+    return city;
+  }
+
+  /* ============================== 氛围:雨 / 微尘 / 蒸汽 ============================== */
+  function makePoints(n, color, size, opacity, fill) {
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) fill(pos, i * 3);
+    const geo = new T.BufferGeometry();
+    geo.setAttribute("position", new T.BufferAttribute(pos, 3));
+    const m = new T.PointsMaterial({ color, size, transparent: true, opacity, sizeAttenuation: true, depthWrite: false });
+    const p = new T.Points(geo, m);
+    p.userData.pos = pos;
+    return p;
+  }
+
+  function buildAtmosphere() {
+    // 窗外雨:环绕房间四周下落
+    const RN = 1500;
+    rain = makePoints(RN, COL.rain, 0.07, 0.6, (a, i) => {
+      const ang = R(0, Math.PI * 2), r = R(7, 16);
+      a[i] = Math.cos(ang) * r; a[i + 1] = R(0, 16); a[i + 2] = Math.sin(ang) * r;
+    });
+    rain.userData.v = new Float32Array(RN);
+    for (let i = 0; i < RN; i++) rain.userData.v[i] = R(7, 12);
+    scene.add(rain);
+    refs.rain = rain;
+
+    // 灯光微尘(室内,聚在台灯附近)
+    dust = makePoints(90, COL.dust, 0.05, 0.45, (a, i) => {
+      a[i] = R(-3, 1); a[i + 1] = R(0.4, 4.2); a[i + 2] = R(-4.4, -1.6);
+    });
+    scene.add(dust);
+    refs.dust = dust;
+
+    // 马克杯蒸汽
+    steam = makePoints(28, COL.steam, 0.06, 0.3, (a, i) => {
+      a[i] = 1.45 + R(-0.05, 0.05); a[i + 1] = R(2.5, 3.5); a[i + 2] = -2.8 + R(-0.05, 0.05);
+    });
+    scene.add(steam);
+    refs.steam = steam;
+  }
+
+  /* ============================== 渲染循环 ============================== */
+  function animate() {
+    if (!running) return;
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    // 雨下落
+    if (rain && rain.visible) {
+      const p = rain.userData.pos, v = rain.userData.v;
+      for (let i = 0; i < v.length; i++) {
+        const y = i * 3 + 1;
+        p[y] -= v[i] * dt;
+        if (p[y] < 0) {
+          p[y] += 16;
+          const ang = R(0, Math.PI * 2), r = R(7, 16);
+          p[i * 3] = Math.cos(ang) * r; p[i * 3 + 2] = Math.sin(ang) * r;
+        }
+      }
+      rain.geometry.attributes.position.needsUpdate = true;
+    }
+    // 微尘缓慢上浮飘移
+    if (dust) {
+      const p = dust.userData.pos;
+      for (let i = 0; i < p.length; i += 3) {
+        p[i] += Math.sin(t * 0.3 + i) * 0.0016;
+        p[i + 1] += 0.0035;
+        if (p[i + 1] > 4.4) p[i + 1] = 0.4;
+      }
+      dust.geometry.attributes.position.needsUpdate = true;
+    }
+    // 蒸汽上升并回收
+    if (steam) {
+      const p = steam.userData.pos;
+      for (let i = 0; i < p.length; i += 3) {
+        p[i + 1] += 0.006;
+        p[i] += Math.sin(t * 0.8 + i) * 0.001;
+        if (p[i + 1] > 4.0) { p[i + 1] = 2.5; p[i] = 1.45 + R(-0.05, 0.05); }
+      }
+      steam.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // 极缓慢镜头微动(非鼠标);reduced-motion 或编辑模式(drift 关)下不接管相机
+    if (driftEnabled && !reduce) {
+      camera.position.set(
+        camBase.x + Math.sin(t * 0.12) * 0.32,
+        camBase.y + Math.sin(t * 0.16) * 0.16,
+        camBase.z + Math.cos(t * 0.10) * 0.32
+      );
+      camera.lookAt(camTarget);
+    }
+
+    // 外部帧回调(editor 的 OrbitControls.update 等)
+    for (let i = 0; i < frameCallbacks.length; i++) frameCallbacks[i](dt, t);
+
+    renderer.render(scene, camera);
+  }
+
+  function onResize() {
+    if (!renderer || !camera) return;
+    const a = window.innerWidth / window.innerHeight;
+    const f = PARAMS.camera.frustum;
+    camera.left = -f * a; camera.right = f * a;
+    camera.top = f; camera.bottom = -f;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /* ============================== 编辑器 API ============================== */
+  // 即时生效(改属性,无需重建几何)
+  function apply(group) {
+    if (!scene) return;
+    switch (group) {
+      case "camera": {
+        // 只改投影(视野/缩放);相机位置/朝向在编辑模式由 OrbitControls 接管,
+        // 由 editor 的 orbit 'change' 写回 camBase/camTarget,故这里不强制重定位相机。
+        const c = PARAMS.camera;
+        camBase.set(c.posX, c.posY, c.posZ);
+        camTarget.set(c.targetX, c.targetY, c.targetZ);
+        camera.zoom = c.zoom;
+        const a = window.innerWidth / window.innerHeight;
+        camera.left = -c.frustum * a; camera.right = c.frustum * a;
+        camera.top = c.frustum; camera.bottom = -c.frustum;
+        camera.updateProjectionMatrix();
+        break;
+      }
+      case "lighting": {
+        const l = PARAMS.lighting;
+        refs.hemiLight.intensity = l.hemiInt;
+        refs.ambLight.intensity = l.ambInt;
+        refs.moonLight.intensity = l.moonInt;
+        refs.moonLight.color.setHex(l.moonColor);
+        refs.moonLight.position.set(l.moonX, l.moonY, l.moonZ);
+        refs.screenLight.intensity = l.screenInt;
+        renderer.toneMappingExposure = l.exposure;
+        scene.fog.color.setHex(l.fogColor);
+        scene.fog.density = l.fogDensity;
+        break;
+      }
+      case "lamp": {
+        const p = PARAMS.lamp;
+        refs.lampGroup.position.set(p.x, LAMP_BASE_Y + p.y, p.z);
+        refs.lampGroup.scale.setScalar(p.scale);
+        refs.lampLight.intensity = p.lightInt;
+        refs.lampLight.color.setHex(p.lightColor);
+        refs.lampBulbMat.emissiveIntensity = p.bulbEmi;
+        refs.lampShadeMat.color.setHex(p.shadeColor);
+        break;
+      }
+      case "bed": {
+        const p = PARAMS.bed;
+        refs.bedGroup.position.set(p.x, 0, p.z);
+        refs.bedGroup.scale.setScalar(p.scale);
+        refs.bedFrameMats.forEach((m) => m.color.setHex(p.frameColor));
+        refs.bedMattressMat.color.setHex(p.mattressColor);
+        break;
+      }
+      case "person": {
+        const p = PARAMS.person;
+        refs.personGroup.position.set(p.x, 0, p.z);
+        refs.personGroup.scale.setScalar(p.scale);
+        refs.personSkinMats.forEach((m) => m.color.setHex(p.bodyColor));
+        refs.personHairMats.forEach((m) => m.color.setHex(p.hairColor));
+        break;
+      }
+      case "rug": {
+        const p = PARAMS.rug;
+        refs.rugMesh.position.set(p.x, 0.03, p.z);
+        refs.rugMesh.scale.set(p.w / RUG_BASE_W, 1, p.d / RUG_BASE_D);
+        refs.rugMat.color.setHex(p.color);
+        break;
+      }
+      case "moon": {
+        const p = PARAMS.moon;
+        refs.moonMesh.position.set(p.x, p.y, p.z);
+        refs.moonMesh.scale.setScalar(p.size / MOON_BASE_R);
+        refs.moonMat.emissiveIntensity = p.emi;
+        if (refs.moonHalo) { refs.moonHalo.position.copy(refs.moonMesh.position); refs.moonHalo.scale.copy(refs.moonMesh.scale); }
+        break;
+      }
+    }
+  }
+
+  // 结构变化:销毁旧几何 + 重建
+  function rebuild(part) {
+    if (!scene) return;
+    if (part === "city") {
+      if (refs.cityGroup) { scene.remove(refs.cityGroup); disposeObj(refs.cityGroup); }
+      refs.cityGroup = buildCity(PARAMS.city);
+      scene.add(refs.cityGroup);
+    } else if (part === "quilt") {
+      if (refs.quiltMesh && refs.bedGroup) { refs.bedGroup.remove(refs.quiltMesh); disposeObj(refs.quiltMesh); }
+      refs.quiltMesh = buildQuilt(PARAMS.quilt);
+      refs.bedGroup.add(refs.quiltMesh);
+    }
+  }
+
+  function setDrift(on) {
+    driftEnabled = !!on;
+    if (!driftEnabled && camera) { camera.position.copy(camBase); camera.lookAt(camTarget); }
+  }
+  function addFrameCallback(fn) { if (typeof fn === "function") frameCallbacks.push(fn); }
+
+  /* —— 供 app.js 调用:雨声开关联动窗外雨 —— */
+  function setRain(on) { if (rain) rain.visible = !!on; }
+
+  return {
+    init, setRain, setDrift, addFrameCallback,
+    apply, rebuild,
+    params: PARAMS,
+    refs: () => refs,
+    three: () => ({ scene, camera, renderer }),
+  };
+})();
