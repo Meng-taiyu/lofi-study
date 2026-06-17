@@ -373,10 +373,9 @@ function scheduleStep(step, t, sec16) {
 
   // 鼓:1、3 拍底鼓
   if (step === 0 || step === 8) kick(t);
-  // 2、4 拍军鼓(柔)
-  if (step === 4 || step === 12) noiseHit(t, 0.18, 0.1, 1200, 6000);
-  // 反拍 hi-hat(调暗调轻,减少高频"电流"感)
-  if (step % 2 === 1) noiseHit(t, 0.045, 0.02, 5000, 8500);
+  // 2、4 拍军鼓(改柔:调暗调轻,从"嚓"变成闷一点的"哒")
+  if (step === 4 || step === 12) noiseHit(t, 0.14, 0.05, 700, 2600);
+  // 反拍 hi-hat(已移除:用户不喜欢这种"嚓嚓"噪声)
 
   // 旋律:稀疏,落在拍点上
   const onBeat = step % 4 === 0;
