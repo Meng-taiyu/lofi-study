@@ -759,10 +759,20 @@ async function addTodo() {
   const title = inp.value.trim();
   if (!title || !(window.Cloud && Cloud.user)) return;
   inp.value = "";
-  const res = await Cloud.addTask(title);
+  $("todoHint").textContent = "添加中…";
+  let res = await Cloud.addTask(title);
   if (res.error) {
-    $("todoHint").textContent = "添加失败：" + (res.error.message || "权限/网络问题");
-    inp.value = title;   // 失败时把内容还回去
+    // “Load failed”常是响应丢了但其实已写入 → 先查一下,避免重复添加
+    const cur = await Cloud.listTasks();
+    if (!cur.error && cur.data.some((t) => t.title === title)) { renderTodos(); return; }
+    // 确实没加上 → 等一下重试一次(网络抖动)
+    await new Promise((r) => setTimeout(r, 700));
+    res = await Cloud.addTask(title);
+  }
+  if (res.error) {
+    $("todoHint").textContent = "添加失败：网络不稳，可能是 iCloud 私密代理 / 校园网拦了请求。" +
+      "关掉「私密代理」或换个网再点 +（你输的内容还在）。";
+    inp.value = title;
     return;
   }
   renderTodos();
