@@ -654,12 +654,82 @@ function bindAuth() {
   Cloud.onChange((user) => {
     renderAuthUI(user);
     if (user) loadFromCloud();
+    renderTodos();   // 登录/退出后刷新待办
   });
+}
+
+/* ============================== 待办清单(云端,登录后可用) ============================== */
+function toggleTodo() {
+  const p = $("todoPanel");
+  const willShow = p.classList.contains("hidden");
+  p.classList.toggle("hidden");
+  $("todoBtn").classList.toggle("on", willShow);
+  if (willShow) renderTodos();
+}
+
+async function renderTodos() {
+  const list = $("todoList"), hint = $("todoHint");
+  if (!list) return;
+  if (!(window.Cloud && Cloud.user)) {
+    list.innerHTML = "";
+    hint.textContent = "登录后使用待办（点底部 ☁ 登录），任务会在手机/电脑间云端同步。";
+    $("todoInput").disabled = true; $("todoAdd").disabled = true;
+    return;
+  }
+  $("todoInput").disabled = false; $("todoAdd").disabled = false;
+  hint.textContent = "加载中…";
+  const tasks = await Cloud.listTasks();
+  list.innerHTML = "";
+  tasks.forEach((t) => list.appendChild(taskItem(t)));
+  const left = tasks.filter((t) => !t.done).length;
+  hint.textContent = tasks.length ? ("还剩 " + left + " 项未完成") : "今天还没有待办，加一项吧。";
+}
+
+function taskItem(t) {
+  const li = document.createElement("li");
+  li.className = "todo-item" + (t.done ? " done" : "");
+  const cb = document.createElement("span");
+  cb.className = "todo-check"; cb.textContent = t.done ? "✓" : "";
+  cb.addEventListener("click", async () => {
+    const nd = !li.classList.contains("done");
+    await Cloud.setTaskDone(t.id, nd);
+    renderTodos();
+  });
+  const txt = document.createElement("span");
+  txt.className = "todo-text"; txt.textContent = t.title;
+  const del = document.createElement("button");
+  del.className = "todo-del"; del.textContent = "×"; del.title = "删除";
+  del.addEventListener("click", async () => {
+    await Cloud.deleteTask(t.id);
+    renderTodos();
+  });
+  li.appendChild(cb); li.appendChild(txt); li.appendChild(del);
+  return li;
+}
+
+async function addTodo() {
+  const inp = $("todoInput");
+  const title = inp.value.trim();
+  if (!title || !(window.Cloud && Cloud.user)) return;
+  inp.value = "";
+  await Cloud.addTask(title);
+  renderTodos();
+}
+
+function bindTodo() {
+  $("todoBtn").addEventListener("click", toggleTodo);
+  $("todoClose").addEventListener("click", () => {
+    $("todoPanel").classList.add("hidden");
+    $("todoBtn").classList.remove("on");
+  });
+  $("todoAdd").addEventListener("click", addTodo);
+  $("todoInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTodo(); });
 }
 
 function main() {
   if (window.Scene3D) Scene3D.init();
   bindUI();
+  bindTodo();
   applySavedState();   // 先用本地数据即时渲染(快)
   renderTimer();
   tickClock();

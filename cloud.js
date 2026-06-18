@@ -90,6 +90,41 @@
         );
       } catch (e) { console.warn("云端存设置失败:", e); }
     },
+
+    // —— 待办任务 ——
+    async listTasks() {
+      if (!this.enabled || !this.user) return [];
+      try {
+        const { data } = await this.client.from("tasks")
+          .select("id,title,done").eq("user_id", this.user.id)
+          .order("done", { ascending: true })
+          .order("created_at", { ascending: true });
+        return data || [];
+      } catch (e) { console.warn("云端读任务失败:", e); return []; }
+    },
+    async addTask(title) {
+      if (!this.enabled || !this.user) return null;
+      try {
+        const { data } = await this.client.from("tasks")
+          .insert({ user_id: this.user.id, title: title })
+          .select("id,title,done").single();
+        return data;
+      } catch (e) { console.warn("云端加任务失败:", e); return null; }
+    },
+    async setTaskDone(id, done) {
+      if (!this.enabled || !this.user) return;
+      try {
+        await this.client.from("tasks")
+          .update({ done: done, done_at: done ? new Date().toISOString() : null })
+          .eq("id", id);
+      } catch (e) { console.warn("云端更新任务失败:", e); }
+    },
+    async deleteTask(id) {
+      if (!this.enabled || !this.user) return;
+      try {
+        await this.client.from("tasks").delete().eq("id", id);
+      } catch (e) { console.warn("云端删任务失败:", e); }
+    },
   };
 
   window.Cloud = Cloud;
