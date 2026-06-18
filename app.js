@@ -22,7 +22,9 @@ const RAIN_MAX = 0.05; // 雨声(白噪声)最大增益:滑块 100% 时只到此
 const STORE_KEY = "lofi-study-state";
 function todayKey() {
   const d = new Date();
-  return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return d.getFullYear() + "-" + m + "-" + day;   // YYYY-MM-DD(本地与云端通用)
 }
 function saveState() {
   try {
@@ -37,6 +39,55 @@ function saveState() {
       rainOn: Audio.rainOn,
     }));
   } catch (e) { /* 隐私模式等存储不可用,忽略 */ }
+  scheduleCloudPush();   // 已登录则同步到云端(防抖)
+}
+
+// 云端写入防抖:多次改动合并成一次上传
+let cloudTimer = null;
+function scheduleCloudPush() {
+  if (!(window.Cloud && Cloud.user)) return;
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(() => {
+    Cloud.saveDaily(todayKey(), timer.count);
+    Cloud.saveSettings({
+      focus_min: timer.focusMin, break_min: timer.breakMin,
+      music_vol: +$("musicVol").value, rain_vol: +$("rainVol").value,
+      music_on: Audio.musicOn, rain_on: Audio.rainOn,
+    });
+  }, 800);
+}
+
+// 从云端拉取并应用(登录后调用)
+async function loadFromCloud() {
+  if (!(window.Cloud && Cloud.user)) return;
+  const res = await Cloud.load(todayKey());
+  if (!res) return;
+  // 今日计数取本地/云端较大值,避免离线已完成的番茄被覆盖丢失
+  timer.count = Math.max(timer.count || 0, Number.isFinite(res.count) ? res.count : 0);
+  const s = res.settings;
+  if (s) {
+    if (s.focus_min && s.break_min) {
+      timer.focusMin = s.focus_min; timer.breakMin = s.break_min;
+      $("presets").querySelectorAll(".chip").forEach((c) =>
+        c.classList.toggle("active",
+          +c.dataset.focus === s.focus_min && +c.dataset.break === s.break_min));
+    }
+    if (Number.isFinite(s.music_vol)) $("musicVol").value = s.music_vol;
+    if (Number.isFinite(s.rain_vol)) $("rainVol").value = s.rain_vol;
+    Audio.musicOn = s.music_on !== false;
+    Audio.rainOn = s.rain_on !== false;
+    $("musicToggle").classList.toggle("off", !Audio.musicOn);
+    $("rainToggle").classList.toggle("off", !Audio.rainOn);
+    // 若音频已启动,同步音量
+    if (Audio.ctx) {
+      setMusicVol(Audio.musicOn ? $("musicVol").value / 100 : 0);
+      setRainVol(Audio.rainOn ? $("rainVol").value / 100 : 0);
+      if (window.Scene3D) Scene3D.setRain(Audio.rainOn);
+    }
+  }
+  setMode("focus");
+  renderTimer();
+  scheduleCloudPush();   // 把合并后的计数同步回云端
 }
 function loadState() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
@@ -545,14 +596,82 @@ function bindUI() {
   });
 }
 
+/* ============================== 登录 / 云端同步 UI ============================== */
+function openAuth() { $("authModal").classList.remove("hidden"); }
+function closeAuth() { $("authModal").classList.add("hidden"); }
+function setAuthMsg(t) { $("authMsg").textContent = t || ""; }
+
+function zhAuthErr(m) {
+  m = m || "";
+  if (/Invalid login/i.test(m)) return "邮箱或密码不对";
+  if (/already registered|already exists|User already/i.test(m)) return "该邮箱已注册,请直接登录";
+  if (/at least 6|password should/i.test(m)) return "密码至少 6 位";
+  if (/valid email|invalid email/i.test(m)) return "邮箱格式不对";
+  if (/Email not confirmed/i.test(m)) return "邮箱未验证(可在 Supabase 关闭邮箱验证)";
+  return m;
+}
+
+function renderAuthUI(user) {
+  const acct = $("acctBtn");
+  if (user) {
+    $("authForm").classList.add("hidden");
+    $("authLogout").classList.remove("hidden");
+    const st = $("authStatus");
+    st.classList.remove("hidden");
+    st.textContent = "已登录:" + (user.email || "账号") + " · 数据已云端同步";
+    if (acct) { acct.classList.add("on"); acct.title = "已登录 · 云端同步"; }
+  } else {
+    $("authForm").classList.remove("hidden");
+    $("authLogout").classList.add("hidden");
+    $("authStatus").classList.add("hidden");
+    if (acct) { acct.classList.remove("on"); acct.title = "登录 / 云端同步"; }
+  }
+}
+
+function bindAuth() {
+  $("acctBtn").addEventListener("click", openAuth);
+  $("authClose").addEventListener("click", closeAuth);
+  $("authModal").addEventListener("click", (e) => { if (e.target === $("authModal")) closeAuth(); });
+
+  $("authLogin").addEventListener("click", async () => {
+    setAuthMsg("登录中…");
+    const { error } = await Cloud.signIn($("authEmail").value.trim(), $("authPass").value);
+    if (error) setAuthMsg("登录失败:" + zhAuthErr(error.message));
+    else { setAuthMsg(""); closeAuth(); }
+  });
+  $("authSignup").addEventListener("click", async () => {
+    setAuthMsg("注册中…");
+    const { error } = await Cloud.signUp($("authEmail").value.trim(), $("authPass").value);
+    if (error) setAuthMsg("注册失败:" + zhAuthErr(error.message));
+    else setAuthMsg("注册成功,正在登录…");
+  });
+  $("authLogout").addEventListener("click", async () => {
+    await Cloud.signOut();
+    closeAuth();
+  });
+
+  // 登录态变化(含初始):更新界面 + 拉取云端数据
+  Cloud.onChange((user) => {
+    renderAuthUI(user);
+    if (user) loadFromCloud();
+  });
+}
+
 function main() {
   if (window.Scene3D) Scene3D.init();
   bindUI();
-  applySavedState();   // 恢复上次的番茄计数/预设/音量(刷新不丢)
+  applySavedState();   // 先用本地数据即时渲染(快)
   renderTimer();
   tickClock();
   setInterval(tickClock, 1000 * 20);
   rotateQuote();
   setInterval(rotateQuote, 1000 * 30);
+  // 云端同步:初始化 Supabase;已登录则 onChange 自动拉取覆盖
+  if (window.Cloud && Cloud.init()) {
+    bindAuth();
+  } else {
+    const acct = $("acctBtn");
+    if (acct) acct.style.display = "none";   // 库未加载,隐藏登录入口
+  }
 }
 document.addEventListener("DOMContentLoaded", main);
