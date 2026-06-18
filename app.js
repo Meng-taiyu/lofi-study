@@ -718,7 +718,14 @@ async function renderTodos() {
   }
   $("todoInput").disabled = false; $("todoAdd").disabled = false;
   hint.textContent = "加载中…";
-  const tasks = await Cloud.listTasks();
+  const res = await Cloud.listTasks();
+  if (res.error) {
+    list.innerHTML = "";
+    hint.textContent = "读取失败：" + (res.error.message || res.error.code || "权限/网络问题") +
+      "（多半是数据库没给 SELECT 权限，跑一下 grant SQL）";
+    return;
+  }
+  const tasks = res.data;
   list.innerHTML = "";
   tasks.forEach((t) => list.appendChild(taskItem(t)));
   const left = tasks.filter((t) => !t.done).length;
@@ -752,7 +759,12 @@ async function addTodo() {
   const title = inp.value.trim();
   if (!title || !(window.Cloud && Cloud.user)) return;
   inp.value = "";
-  await Cloud.addTask(title);
+  const res = await Cloud.addTask(title);
+  if (res.error) {
+    $("todoHint").textContent = "添加失败：" + (res.error.message || "权限/网络问题");
+    inp.value = title;   // 失败时把内容还回去
+    return;
+  }
   renderTodos();
 }
 

@@ -93,37 +93,33 @@
 
     // —— 待办任务 ——
     async listTasks() {
-      if (!this.enabled || !this.user) return [];
-      try {
-        const { data } = await this.client.from("tasks")
-          .select("id,title,done").eq("user_id", this.user.id)
-          .order("done", { ascending: true })
-          .order("created_at", { ascending: true });
-        return data || [];
-      } catch (e) { console.warn("云端读任务失败:", e); return []; }
+      if (!this.enabled || !this.user) return { data: [], error: null };
+      const { data, error } = await this.client.from("tasks")
+        .select("id,title,done").eq("user_id", this.user.id)
+        .order("done", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) console.warn("云端读任务失败:", error);
+      return { data: data || [], error: error };
     },
     async addTask(title) {
-      if (!this.enabled || !this.user) return null;
-      try {
-        const { data } = await this.client.from("tasks")
-          .insert({ user_id: this.user.id, title: title })
-          .select("id,title,done").single();
-        return data;
-      } catch (e) { console.warn("云端加任务失败:", e); return null; }
+      if (!this.enabled || !this.user) return { data: null, error: { message: "未登录" } };
+      const { data, error } = await this.client.from("tasks")
+        .insert({ user_id: this.user.id, title: title })
+        .select("id,title,done").single();
+      if (error) console.warn("云端加任务失败:", error);
+      return { data: data, error: error };
     },
     async setTaskDone(id, done) {
       if (!this.enabled || !this.user) return;
-      try {
-        await this.client.from("tasks")
-          .update({ done: done, done_at: done ? new Date().toISOString() : null })
-          .eq("id", id);
-      } catch (e) { console.warn("云端更新任务失败:", e); }
+      const { error } = await this.client.from("tasks")
+        .update({ done: done, done_at: done ? new Date().toISOString() : null })
+        .eq("id", id);
+      if (error) console.warn("云端更新任务失败:", error);
     },
     async deleteTask(id) {
       if (!this.enabled || !this.user) return;
-      try {
-        await this.client.from("tasks").delete().eq("id", id);
-      } catch (e) { console.warn("云端删任务失败:", e); }
+      const { error } = await this.client.from("tasks").delete().eq("id", id);
+      if (error) console.warn("云端删任务失败:", error);
     },
   };
 
