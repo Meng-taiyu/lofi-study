@@ -1,0 +1,17 @@
+{
+  "name": "夜间自习室 · lo-fi study room",
+  "short_name": "夜间自习室",
+  "description": "lo-fi 夜间自习室 · 番茄钟 · 考研倒计时 · 待办",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070a16",
+  "theme_color": "#1a2142",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
