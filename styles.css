@@ -228,3 +228,7 @@ body{
 
 .todo-text{ cursor:pointer; }
 .todo-check{ user-select:none; }
+
+/* ===== 版本号(角落,常显) ===== */
+.ver{ position:fixed; right:10px; bottom:calc(6px + env(safe-area-inset-bottom)); z-index:11;
+  font-size:10px; letter-spacing:.5px; color:var(--muted); opacity:.45; pointer-events:none; }
