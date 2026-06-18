@@ -18,6 +18,50 @@ const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const RAIN_MAX = 0.05; // 雨声(白噪声)最大增益:滑块 100% 时只到此值
 
+/* ============================== 本地存储(刷新不丢:番茄计数/预设/音量) ============================== */
+const STORE_KEY = "lofi-study-state";
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+}
+function saveState() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      day: todayKey(),
+      count: timer.count,
+      focusMin: timer.focusMin,
+      breakMin: timer.breakMin,
+      musicVol: +$("musicVol").value,
+      rainVol: +$("rainVol").value,
+      musicOn: Audio.musicOn,
+      rainOn: Audio.rainOn,
+    }));
+  } catch (e) { /* 隐私模式等存储不可用,忽略 */ }
+}
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function applySavedState() {
+  const st = loadState();
+  // 番茄计数:同一天才恢复(跨天自动清零 = "今日番茄");当天刷新不丢
+  if (st.day === todayKey() && Number.isFinite(st.count)) timer.count = st.count;
+  // 番茄钟预设
+  if (st.focusMin && st.breakMin) {
+    timer.focusMin = st.focusMin; timer.breakMin = st.breakMin;
+    $("presets").querySelectorAll(".chip").forEach((c) =>
+      c.classList.toggle("active",
+        +c.dataset.focus === st.focusMin && +c.dataset.break === st.breakMin));
+    setMode("focus");
+  }
+  // 音量滑块位置
+  if (Number.isFinite(st.musicVol)) $("musicVol").value = st.musicVol;
+  if (Number.isFinite(st.rainVol)) $("rainVol").value = st.rainVol;
+  // 开关(此时音频还没启动,先记状态,enter() 里应用)
+  if (st.musicOn === false) { Audio.musicOn = false; $("musicToggle").classList.add("off"); }
+  if (st.rainOn === false) { Audio.rainOn = false; $("rainToggle").classList.add("off"); }
+}
+
 /* 场景(房间/灯光/家具/夜景/雨)已迁移到 scene3d.js —— Three.js 等距 3D 房间 */
 
 /* ============================== 时钟 / 倒计时 / 语录 ============================== */
@@ -145,6 +189,7 @@ function finishPhase() {
   clearInterval(timer.iv);
   if (timer.mode === "focus") {
     timer.count++;
+    saveState();          // 完成一个番茄 → 立即存盘,刷新不丢
     chime(true);
     setMode("break");
   } else {
@@ -398,6 +443,7 @@ function toggleMusic() {
   const btn = $("musicToggle");
   btn.classList.toggle("off", !Audio.musicOn);
   setMusicVol(Audio.musicOn ? $("musicVol").value / 100 : 0);
+  saveState();
 }
 function toggleRain() {
   Audio.rainOn = !Audio.rainOn;
@@ -405,6 +451,7 @@ function toggleRain() {
   btn.classList.toggle("off", !Audio.rainOn);
   setRainVol(Audio.rainOn ? $("rainVol").value / 100 : 0);
   if (window.Scene3D) Scene3D.setRain(Audio.rainOn); // 联动窗外雨
+  saveState();
 }
 
 /* 雨改由 scene3d.js 的 3D 粒子实现(随雨声开关显隐,见 toggleRain) */
@@ -431,6 +478,10 @@ function enter() {
   try {
     initAudio();
     unlockAudio();
+    // 应用已保存的音量与开关状态(刷新前的设置)
+    setMusicVol(Audio.musicOn ? $("musicVol").value / 100 : 0);
+    setRainVol(Audio.rainOn ? $("rainVol").value / 100 : 0);
+    if (window.Scene3D) Scene3D.setRain(Audio.rainOn);
     // 兜底:有些机型首次手势 resume 不生效,后续任一次触摸/点击再恢复一次
     const kick = () => {
       if (Audio.ctx && Audio.ctx.state !== "running") {
@@ -463,6 +514,7 @@ function bindUI() {
       clearInterval(timer.iv);
       timer.running = false;
       setMode("focus");
+      saveState();
     });
   });
 
@@ -475,6 +527,9 @@ function bindUI() {
   $("rainVol").addEventListener("input", (e) => {
     if (Audio.rainOn) setRainVol(e.target.value / 100);
   });
+  // 音量拖动结束后存盘(避免拖动过程频繁写入)
+  $("musicVol").addEventListener("change", saveState);
+  $("rainVol").addEventListener("change", saveState);
 
   // 全屏
   $("fsBtn").addEventListener("click", () => {
@@ -493,6 +548,7 @@ function bindUI() {
 function main() {
   if (window.Scene3D) Scene3D.init();
   bindUI();
+  applySavedState();   // 恢复上次的番茄计数/预设/音量(刷新不丢)
   renderTimer();
   tickClock();
   setInterval(tickClock, 1000 * 20);
