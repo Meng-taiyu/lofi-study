@@ -33,6 +33,10 @@ function saveState() {
       count: timer.count,
       focusMin: timer.focusMin,
       breakMin: timer.breakMin,
+      mode: timer.mode,
+      remain: remainNow(),
+      running: timer.running,
+      endAt: timer.endAt,
       musicVol: +$("musicVol").value,
       rainVol: +$("rainVol").value,
       musicOn: Audio.musicOn,
@@ -104,6 +108,22 @@ function applySavedState() {
       c.classList.toggle("active",
         +c.dataset.focus === st.focusMin && +c.dataset.break === st.breakMin));
     setMode("focus");
+  }
+  // 番茄钟运行状态:切后台/重载后按结束时间戳续上,不重新计时
+  if (st.mode === "focus" || st.mode === "break") setMode(st.mode);
+  if (st.running && Number.isFinite(st.endAt) && st.endAt > 0) {
+    const left = Math.round((st.endAt - Date.now()) / 1000);
+    if (left > 0) {
+      timer.endAt = st.endAt; timer.remain = left; timer.running = true;
+      startTick();
+    } else {
+      // 在后台跑完了这个阶段:专注补计一个番茄,切到下一阶段并暂停
+      if (st.mode === "focus") timer.count++;
+      timer.running = false; timer.endAt = 0;
+      setMode(st.mode === "focus" ? "break" : "focus");
+    }
+  } else if (Number.isFinite(st.remain) && st.remain > 0) {
+    timer.remain = st.remain;   // 暂停态也保留剩余时间
   }
   // 音量滑块位置
   if (Number.isFinite(st.musicVol)) $("musicVol").value = st.musicVol;
@@ -198,6 +218,7 @@ const timer = {
   mode: "focus",          // focus | break
   remain: 25 * 60,
   running: false,
+  endAt: 0,               // 运行时:本阶段结束的绝对时间戳(ms)。按它算剩余,切后台/重载也准
   count: 0,
   iv: null,
 };
@@ -205,6 +226,18 @@ function fmt(s) {
   const m = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(s % 60).padStart(2, "0");
   return `${m}:${ss}`;
+}
+// 运行时按结束时间戳算剩余秒数;暂停时返回冻结值
+function remainNow() {
+  return timer.running ? Math.max(0, Math.round((timer.endAt - Date.now()) / 1000)) : timer.remain;
+}
+function startTick() {
+  clearInterval(timer.iv);
+  timer.iv = setInterval(() => {
+    timer.remain = remainNow();
+    if (timer.remain <= 0) finishPhase();
+    else renderTimer();
+  }, 250);   // 250ms:更跟手,且切回前台能很快校正
 }
 function renderTimer() {
   $("tTime").textContent = fmt(timer.remain);
@@ -223,49 +256,48 @@ function setMode(mode) {
 function toggleTimer() {
   timer.running = !timer.running;
   if (timer.running) {
-    timer.iv = setInterval(() => {
-      if (timer.remain > 0) {
-        timer.remain--;
-        renderTimer();
-      } else {
-        finishPhase();
-      }
-    }, 1000);
+    timer.endAt = Date.now() + timer.remain * 1000;   // 锚定结束时刻
+    startTick();
   } else {
+    timer.remain = remainNow();                        // 冻结剩余
+    timer.endAt = 0;
     clearInterval(timer.iv);
   }
   renderTimer();
+  saveState();
 }
 function finishPhase() {
   clearInterval(timer.iv);
   if (timer.mode === "focus") {
     timer.count++;
-    saveState();          // 完成一个番茄 → 立即存盘,刷新不丢
     chime(true);
     setMode("break");
   } else {
     chime(false);
     setMode("focus");
   }
-  // 自动进入下一阶段
+  // 自动进入下一阶段(继续按时间戳运行)
   timer.running = true;
-  timer.iv = setInterval(() => {
-    if (timer.remain > 0) { timer.remain--; renderTimer(); }
-    else finishPhase();
-  }, 1000);
+  timer.endAt = Date.now() + timer.remain * 1000;
+  startTick();
   renderTimer();
+  saveState();
 }
 function resetTimer() {
   clearInterval(timer.iv);
   timer.running = false;
+  timer.endAt = 0;
   setMode(timer.mode);
+  saveState();
 }
 function skipPhase() {
   clearInterval(timer.iv);
   const wasRunning = timer.running;
   timer.running = false;
+  timer.endAt = 0;
   if (timer.mode === "focus") setMode("break"); else setMode("focus");
-  if (wasRunning) toggleTimer();
+  if (wasRunning) toggleTimer();   // 续上运行(会重设 endAt)
+  else saveState();
 }
 
 /* ============================== Web Audio 引擎 ============================== */
@@ -592,6 +624,14 @@ function bindUI() {
   document.addEventListener("keydown", (e) => {
     if (e.code === "Space" && $("gate").classList.contains("gone")) {
       e.preventDefault(); toggleTimer();
+    }
+  });
+
+  // 切回前台时按结束时间戳立即校正(后台 setInterval 会被浏览器限流)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && timer.running) {
+      timer.remain = remainNow();
+      if (timer.remain <= 0) finishPhase(); else renderTimer();
     }
   });
 }
