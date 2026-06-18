@@ -25,10 +25,10 @@ window.Scene3D = (function () {
   const PARAMS = {
     camera: { posX: 11, posY: 9, posZ: 11, targetX: 0, targetY: 2.2, targetZ: -1, frustum: 6.6, zoom: 1, drift: true },
     lighting: {
-      hemiInt: 0.5, ambInt: 0.35,
-      moonInt: 1.05, moonColor: 0x9fc0ff, moonX: 3, moonY: 10, moonZ: -14,
-      screenInt: 0.5, exposure: 1.1,
-      fogColor: 0x16223f, fogDensity: 0.02,
+      hemiInt: 0.36, ambInt: 0.24,
+      moonInt: 0.92, moonColor: 0x9fc0ff, moonX: 3, moonY: 10, moonZ: -14,
+      screenInt: 0.5, exposure: 0.88,
+      fogColor: 0x0c1428, fogDensity: 0.028,
     },
     lamp: { x: -1.85, y: 0, z: -3.5, scale: 1, lightInt: 2.0, lightColor: 0xffb070, bulbEmi: 1.3, shadeColor: 0xff9d57 },
     city: { count: 28, rInner: 13, rOuter: 22, hMin: 2.5, hMax: 8, wMin: 1.4, wMax: 2.6, winChance: 0.15 },
