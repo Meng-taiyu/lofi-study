@@ -30,7 +30,7 @@ window.Scene3D = (function () {
       screenInt: 0.5, exposure: 1.1,
       fogColor: 0x16223f, fogDensity: 0.02,
     },
-    lamp: { x: -1.85, y: 0, z: -3.5, scale: 1, lightInt: 2.0, lightColor: 0xffb070, bulbEmi: 2.2, shadeColor: 0xff9d57 },
+    lamp: { x: -1.85, y: 0, z: -3.5, scale: 1, lightInt: 2.0, lightColor: 0xffb070, bulbEmi: 1.3, shadeColor: 0xff9d57 },
     city: { count: 28, rInner: 13, rOuter: 22, hMin: 2.5, hMax: 8, wMin: 1.4, wMax: 2.6, winChance: 0.15 },
     bed: { x: -3.65, z: 0.5, scale: 1, frameColor: 0x39303f, mattressColor: 0x66739c },
     quilt: { color: 0xb87a64, puff: 1, drape: 1, segments: 4, skew: 0.12 },
@@ -349,8 +349,8 @@ window.Scene3D = (function () {
     shade.castShadow = false; g.add(shade);
 
     const bulbMat = mat(0xfff0c8, { emissive: 0xffcf87, emi: p.bulbEmi, rough: 1 });
-    const bulb = new T.Mesh(new T.SphereGeometry(0.1, 12, 12), bulbMat);
-    bulb.position.set(0.47, 0.74, 0.04); bulb.castShadow = false; g.add(bulb);
+    const bulb = new T.Mesh(new T.SphereGeometry(0.07, 12, 12), bulbMat);
+    bulb.position.set(0.54, 0.82, 0.02); bulb.castShadow = false; g.add(bulb); // 缩小并塞进灯罩口内,只露暖光
 
     // 暖色台灯点光源(作为 group 子节点,随台灯移动/缩放)
     const lamp = new T.PointLight(p.lightColor, p.lightInt, 13, 2);
@@ -435,6 +435,13 @@ window.Scene3D = (function () {
         const tz = Math.min(1, overZ / 0.24);
         v.y -= (0.22 + 0.26 * p.drape) * tz * tz;
         v.z -= 0.05 * tz;
+      }
+      // 头侧(local z≈+halfZ)也收边,避免留下平整方块立面
+      const overZh = v.z - (halfZ - 0.22);
+      if (overZh > 0) {
+        const tzh = Math.min(1, overZh / 0.22);
+        v.y -= (0.16 + 0.20 * p.drape) * tzh * tzh;
+        v.z += 0.04 * tzh;
       }
       pos.setXYZ(i, v.x, v.y, v.z);
     }
