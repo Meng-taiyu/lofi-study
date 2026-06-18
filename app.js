@@ -708,6 +708,17 @@ function toggleTodo() {
 }
 
 let _todos = [];   // 待办本地缓存(乐观更新的来源)
+let _histText = "";  // 导出用的历史文本
+
+// "2026-06-18" -> "6月18日";  full=true -> 加 "周四"
+function fmtDayLabel(ymd, full) {
+  const p = String(ymd).split("-").map(Number);
+  if (p.length < 3) return ymd;
+  const dt = new Date(p[0], p[1] - 1, p[2]);
+  let s = p[1] + "月" + p[2] + "日";
+  if (full) s += " 周" + "日一二三四五六"[dt.getDay()];
+  return s;
+}
 
 // 写操作带一次重试,返回 error(null=成功)
 async function todoWrite(fn) {
@@ -719,6 +730,7 @@ async function todoWrite(fn) {
 async function renderTodos() {
   const list = $("todoList"), hint = $("todoHint");
   if (!list) return;
+  const tt = $("todoTitle"); if (tt) tt.textContent = fmtDayLabel(todayKey()) + " 待办";
   if (!(window.Cloud && Cloud.user)) {
     _todos = []; list.innerHTML = "";
     hint.textContent = "登录后使用待办（点底部 ☁ 登录），任务会在手机/电脑间云端同步。";
@@ -727,7 +739,7 @@ async function renderTodos() {
   }
   $("todoInput").disabled = false; $("todoAdd").disabled = false;
   hint.textContent = "加载中…";
-  const res = await Cloud.listTasks();
+  const res = await Cloud.listTasks(todayKey());
   if (res.error) {
     list.innerHTML = "";
     hint.textContent = "读取失败：" + (res.error.message || res.error.code || "网络/权限问题");
@@ -786,13 +798,14 @@ async function addTodo() {
   if (!title || !(window.Cloud && Cloud.user)) return;
   inp.value = "";
   $("todoHint").textContent = "添加中…";
-  let res = await Cloud.addTask(title);
+  const day = todayKey();
+  let res = await Cloud.addTask(title, day);
   if (res && res.error) {
     // 可能其实已写入(响应丢了) → 查重避免重复
-    const cur = await Cloud.listTasks();
+    const cur = await Cloud.listTasks(day);
     if (!cur.error && cur.data.some((t) => t.title === title)) { _todos = cur.data; paintTodos(); return; }
     await new Promise((r) => setTimeout(r, 700));
-    res = await Cloud.addTask(title);
+    res = await Cloud.addTask(title, day);
   }
   if (res && res.error) {
     $("todoHint").textContent = "添加失败：网络不稳(iCloud 私密代理/校园网?)，内容已保留，换网或稍后再点 +";
@@ -803,6 +816,57 @@ async function addTodo() {
   else renderTodos();
 }
 
+/* —— 历史记录 / 导出 —— */
+async function openHistory() {
+  if (!(window.Cloud && Cloud.user)) return;
+  const body = $("histBody");
+  $("histModal").classList.remove("hidden");
+  body.textContent = "加载中…";
+  const res = await Cloud.listAllTasks();
+  if (res.error) { body.textContent = "读取失败：" + (res.error.message || "网络/权限问题"); _histText = ""; return; }
+  if (!res.data.length) { body.textContent = "还没有记录，先去加几条待办吧。"; _histText = ""; return; }
+  // 按日期分组(已按 day 倒序、created_at 升序)
+  const byDay = {};
+  res.data.forEach((t) => { (byDay[t.day] = byDay[t.day] || []).push(t); });
+  const days = Object.keys(byDay).sort().reverse();
+  body.innerHTML = "";
+  let txt = "夜间自习室 · 待办记录\n导出时间：" + todayKey() + "\n\n";
+  days.forEach((d) => {
+    const items = byDay[d];
+    const doneN = items.filter((t) => t.done).length;
+    const dh = document.createElement("div");
+    dh.className = "hist-day";
+    dh.textContent = fmtDayLabel(d, true) + "  (" + doneN + "/" + items.length + ")";
+    body.appendChild(dh);
+    txt += "# " + d + " " + fmtDayLabel(d, true) + "  (" + doneN + "/" + items.length + ")\n";
+    items.forEach((t) => {
+      const it = document.createElement("div");
+      it.className = "hist-item" + (t.done ? " done" : "");
+      it.textContent = (t.done ? "✓ " : "○ ") + t.title;   // textContent 防注入
+      body.appendChild(it);
+      txt += (t.done ? "[x] " : "[ ] ") + t.title + "\n";
+    });
+    txt += "\n";
+  });
+  _histText = txt;
+}
+function exportHistory() {
+  if (!_histText) return;
+  const blob = new Blob([_histText], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "待办记录_" + todayKey() + ".txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function copyHistory() {
+  if (!_histText || !navigator.clipboard) return;
+  navigator.clipboard.writeText(_histText).then(
+    () => { $("histCopy").textContent = "已复制"; setTimeout(() => ($("histCopy").textContent = "复制"), 1500); },
+    () => { $("histCopy").textContent = "复制失败"; }
+  );
+}
+
 function bindTodo() {
   $("todoBtn").addEventListener("click", toggleTodo);
   $("todoClose").addEventListener("click", () => {
@@ -811,6 +875,12 @@ function bindTodo() {
   });
   $("todoAdd").addEventListener("click", addTodo);
   $("todoInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTodo(); });
+  // 历史记录弹窗
+  $("todoHist").addEventListener("click", openHistory);
+  $("histClose").addEventListener("click", () => $("histModal").classList.add("hidden"));
+  $("histModal").addEventListener("click", (e) => { if (e.target === $("histModal")) $("histModal").classList.add("hidden"); });
+  $("histExport").addEventListener("click", exportHistory);
+  $("histCopy").addEventListener("click", copyHistory);
 }
 
 function main() {

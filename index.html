@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="icon-180.png" />
 <link rel="icon" type="image/png" href="icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=1.3.1" />
+<link rel="stylesheet" href="styles.css?v=1.4.0" />
 </head>
 <body>
 
@@ -66,11 +66,14 @@
     <button id="acctBtn" class="iconbtn" title="登录 / 云端同步">☁</button>
   </div>
 
-  <!-- 左下:待办清单(登录后云端同步) -->
+  <!-- 左下:待办清单(登录后云端同步,按天归档) -->
   <div class="panel todo hidden" id="todoPanel">
     <div class="todo-head">
-      <span class="todo-title">今日待办</span>
-      <button id="todoClose" class="todo-x" title="收起">×</button>
+      <span class="todo-title" id="todoTitle">待办</span>
+      <span class="todo-actions">
+        <button id="todoHist" class="todo-mini" title="历史记录 / 导出">记录</button>
+        <button id="todoClose" class="todo-x" title="收起">×</button>
+      </span>
     </div>
     <div class="todo-add">
       <input id="todoInput" class="todo-input" type="text" placeholder="加一项待办，回车添加…" maxlength="120" />
@@ -81,7 +84,7 @@
   </div>
 
   <div class="nowplaying">♪ lo-fi beats · 实时生成 · 无限循环</div>
-  <div class="ver" id="ver">v1.3.1</div>
+  <div class="ver" id="ver">v1.4.0</div>
 </div>
 
 <!-- ===== 登录 / 云端同步弹窗 ===== -->
@@ -104,6 +107,20 @@
   </div>
 </div>
 
+<!-- ===== 待办历史记录弹窗 ===== -->
+<div id="histModal" class="auth-modal hidden">
+  <div class="auth-card hist-card">
+    <button id="histClose" class="auth-close" title="关闭">×</button>
+    <div class="auth-title">待办记录</div>
+    <div class="auth-sub">按日期归档，可导出为文本</div>
+    <div id="histBody" class="hist-body"></div>
+    <div class="hist-btns">
+      <button id="histExport" class="btn primary">导出 .txt</button>
+      <button id="histCopy" class="btn">复制</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 进入遮罩(满足浏览器自动播放策略 + 启动音频) ===== -->
 <div id="gate" class="gate">
   <div class="gate-inner">
@@ -118,11 +135,11 @@
 <script src="vendor/three.min.js"></script>
 <script src="vendor/OrbitControls.js"></script>
 <script src="vendor/TransformControls.js"></script>
-<script src="scene3d.js?v=1.3.1"></script>
+<script src="scene3d.js?v=1.4.0"></script>
 <script src="vendor/supabase.js"></script>
-<script src="cloud.js?v=1.3.1"></script>
-<script src="app.js?v=1.3.1"></script>
+<script src="cloud.js?v=1.4.0"></script>
+<script src="app.js?v=1.4.0"></script>
 <!-- 可视化编辑器:仅当 URL 带 ?edit 时激活,正常访客零负担 -->
-<script src="editor.js?v=1.3.1"></script>
+<script src="editor.js?v=1.4.0"></script>
 </body>
 </html>

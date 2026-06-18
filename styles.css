@@ -232,3 +232,16 @@ body{
 /* ===== 版本号(角落,常显) ===== */
 .ver{ position:fixed; right:10px; bottom:calc(6px + env(safe-area-inset-bottom)); z-index:11;
   font-size:10px; letter-spacing:.5px; color:var(--muted); opacity:.45; pointer-events:none; }
+
+/* ===== 待办头部操作 + 历史记录弹窗 ===== */
+.todo-actions{ display:flex; align-items:center; gap:8px; }
+.todo-mini{ cursor:pointer; border:1px solid var(--glass-brd); background:rgba(255,255,255,.06);
+  color:var(--muted); font-family:var(--font); font-size:11px; padding:3px 9px; border-radius:999px; }
+.todo-mini:hover{ color:var(--ink); }
+.hist-card{ width:min(92vw,420px); }
+.hist-body{ max-height:52vh; overflow-y:auto; margin-top:12px; padding-right:4px; }
+.hist-day{ margin:12px 0 4px; font-size:13px; font-weight:600; color:var(--accent); }
+.hist-item{ font-size:13px; color:var(--ink); line-height:1.6; word-break:break-word; }
+.hist-item.done{ color:var(--muted); text-decoration:line-through; }
+.hist-btns{ display:flex; gap:8px; margin-top:14px; }
+.hist-btns .btn{ flex:1; }

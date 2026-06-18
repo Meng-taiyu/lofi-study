@@ -91,21 +91,30 @@
       } catch (e) { console.warn("云端存设置失败:", e); }
     },
 
-    // —— 待办任务 ——
-    async listTasks() {
+    // —— 待办任务(按天归档) ——
+    async listTasks(day) {
       if (!this.enabled || !this.user) return { data: [], error: null };
       const { data, error } = await this.client.from("tasks")
-        .select("id,title,done").eq("user_id", this.user.id)
+        .select("id,title,done,day").eq("user_id", this.user.id).eq("day", day)
         .order("done", { ascending: true })
         .order("created_at", { ascending: true });
       if (error) console.warn("云端读任务失败:", error);
       return { data: data || [], error: error };
     },
-    async addTask(title) {
+    async listAllTasks() {
+      if (!this.enabled || !this.user) return { data: [], error: null };
+      const { data, error } = await this.client.from("tasks")
+        .select("id,title,done,day").eq("user_id", this.user.id)
+        .order("day", { ascending: false })
+        .order("created_at", { ascending: true });
+      if (error) console.warn("云端读历史失败:", error);
+      return { data: data || [], error: error };
+    },
+    async addTask(title, day) {
       if (!this.enabled || !this.user) return { data: null, error: { message: "未登录" } };
       const { data, error } = await this.client.from("tasks")
-        .insert({ user_id: this.user.id, title: title })
-        .select("id,title,done").single();
+        .insert({ user_id: this.user.id, title: title, day: day })
+        .select("id,title,done,day").single();
       if (error) console.warn("云端加任务失败:", error);
       return { data: data, error: error };
     },
