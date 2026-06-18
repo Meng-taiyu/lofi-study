@@ -707,11 +707,20 @@ function toggleTodo() {
   if (willShow) renderTodos();
 }
 
+let _todos = [];   // 待办本地缓存(乐观更新的来源)
+
+// 写操作带一次重试,返回 error(null=成功)
+async function todoWrite(fn) {
+  let r = await fn();
+  if (r && r.error) { await new Promise((res) => setTimeout(res, 600)); r = await fn(); }
+  return r ? r.error : null;
+}
+
 async function renderTodos() {
   const list = $("todoList"), hint = $("todoHint");
   if (!list) return;
   if (!(window.Cloud && Cloud.user)) {
-    list.innerHTML = "";
+    _todos = []; list.innerHTML = "";
     hint.textContent = "登录后使用待办（点底部 ☁ 登录），任务会在手机/电脑间云端同步。";
     $("todoInput").disabled = true; $("todoAdd").disabled = true;
     return;
@@ -721,15 +730,21 @@ async function renderTodos() {
   const res = await Cloud.listTasks();
   if (res.error) {
     list.innerHTML = "";
-    hint.textContent = "读取失败：" + (res.error.message || res.error.code || "权限/网络问题") +
-      "（多半是数据库没给 SELECT 权限，跑一下 grant SQL）";
+    hint.textContent = "读取失败：" + (res.error.message || res.error.code || "网络/权限问题");
     return;
   }
-  const tasks = res.data;
+  _todos = res.data;
+  paintTodos();
+}
+
+function paintTodos() {
+  const list = $("todoList"), hint = $("todoHint");
   list.innerHTML = "";
-  tasks.forEach((t) => list.appendChild(taskItem(t)));
-  const left = tasks.filter((t) => !t.done).length;
-  hint.textContent = tasks.length ? ("还剩 " + left + " 项未完成") : "今天还没有待办，加一项吧。";
+  _todos.forEach((t) => list.appendChild(taskItem(t)));
+  const left = _todos.filter((t) => !t.done).length;
+  hint.textContent = _todos.length
+    ? ("还剩 " + left + " 项 · 共 " + _todos.length)
+    : "今天还没有待办，加一项吧。";
 }
 
 function taskItem(t) {
@@ -737,21 +752,32 @@ function taskItem(t) {
   li.className = "todo-item" + (t.done ? " done" : "");
   const cb = document.createElement("span");
   cb.className = "todo-check"; cb.textContent = t.done ? "✓" : "";
-  cb.addEventListener("click", async () => {
-    const nd = !li.classList.contains("done");
-    await Cloud.setTaskDone(t.id, nd);
-    renderTodos();
-  });
   const txt = document.createElement("span");
   txt.className = "todo-text"; txt.textContent = t.title;
   const del = document.createElement("button");
   del.className = "todo-del"; del.textContent = "×"; del.title = "删除";
-  del.addEventListener("click", async () => {
-    await Cloud.deleteTask(t.id);
-    renderTodos();
-  });
+  // 点勾选框或文字都能切换完成(大点击区,手机好按);点 × 删除
+  const toggle = (e) => { e.stopPropagation(); toggleTask(t); };
+  cb.addEventListener("click", toggle);
+  txt.addEventListener("click", toggle);
+  del.addEventListener("click", (e) => { e.stopPropagation(); removeTask(t); });
   li.appendChild(cb); li.appendChild(txt); li.appendChild(del);
   return li;
+}
+
+async function toggleTask(t) {
+  const nd = !t.done;
+  t.done = nd; paintTodos();                       // 乐观:立即打勾/取消
+  const err = await todoWrite(() => Cloud.setTaskDone(t.id, nd));
+  if (err) { t.done = !nd; paintTodos(); $("todoHint").textContent = "保存失败(网络)，已撤销，请重试"; }
+}
+
+async function removeTask(t) {
+  const i = _todos.indexOf(t);
+  if (i < 0) return;
+  _todos.splice(i, 1); paintTodos();               // 乐观:立即移除
+  const err = await todoWrite(() => Cloud.deleteTask(t.id));
+  if (err) { _todos.splice(i, 0, t); paintTodos(); $("todoHint").textContent = "删除失败(网络)，已恢复"; }
 }
 
 async function addTodo() {
@@ -761,21 +787,20 @@ async function addTodo() {
   inp.value = "";
   $("todoHint").textContent = "添加中…";
   let res = await Cloud.addTask(title);
-  if (res.error) {
-    // “Load failed”常是响应丢了但其实已写入 → 先查一下,避免重复添加
+  if (res && res.error) {
+    // 可能其实已写入(响应丢了) → 查重避免重复
     const cur = await Cloud.listTasks();
-    if (!cur.error && cur.data.some((t) => t.title === title)) { renderTodos(); return; }
-    // 确实没加上 → 等一下重试一次(网络抖动)
+    if (!cur.error && cur.data.some((t) => t.title === title)) { _todos = cur.data; paintTodos(); return; }
     await new Promise((r) => setTimeout(r, 700));
     res = await Cloud.addTask(title);
   }
-  if (res.error) {
-    $("todoHint").textContent = "添加失败：网络不稳，可能是 iCloud 私密代理 / 校园网拦了请求。" +
-      "关掉「私密代理」或换个网再点 +（你输的内容还在）。";
+  if (res && res.error) {
+    $("todoHint").textContent = "添加失败：网络不稳(iCloud 私密代理/校园网?)，内容已保留，换网或稍后再点 +";
     inp.value = title;
     return;
   }
-  renderTodos();
+  if (res && res.data) { _todos.push(res.data); paintTodos(); }   // 乐观追加
+  else renderTodos();
 }
 
 function bindTodo() {

@@ -110,16 +110,18 @@
       return { data: data, error: error };
     },
     async setTaskDone(id, done) {
-      if (!this.enabled || !this.user) return;
+      if (!this.enabled || !this.user) return { error: { message: "未登录" } };
       const { error } = await this.client.from("tasks")
         .update({ done: done, done_at: done ? new Date().toISOString() : null })
         .eq("id", id);
       if (error) console.warn("云端更新任务失败:", error);
+      return { error: error };
     },
     async deleteTask(id) {
-      if (!this.enabled || !this.user) return;
+      if (!this.enabled || !this.user) return { error: { message: "未登录" } };
       const { error } = await this.client.from("tasks").delete().eq("id", id);
       if (error) console.warn("云端删任务失败:", error);
+      return { error: error };
     },
   };
 

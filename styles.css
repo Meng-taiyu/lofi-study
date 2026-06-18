@@ -225,3 +225,6 @@ body{
     bottom:calc(78px + env(safe-area-inset-bottom)); }
   .todo-list{ max-height:40vh; }
 }
+
+.todo-text{ cursor:pointer; }
+.todo-check{ user-select:none; }
