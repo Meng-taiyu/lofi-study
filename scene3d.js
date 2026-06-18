@@ -394,42 +394,64 @@ window.Scene3D = (function () {
     refs.bedFrameMats = [frameMat]; refs.bedMattressMat = mattressMat;
   }
 
-  /* —— 被子:多段堆叠 + 顶面起伏 + 侧垂边 + 被角翻折(蓬松,不再像豆腐块) —— */
+  /* —— 被子:平滑曲面 + 正弦褶皱起伏 + 中间隆起 + 边缘自然下垂 + 头侧卷边(柔软布料感) —— */
   function buildQuilt(p) {
     const g = new T.Group();
-    const m = mat(p.color, { rough: 1, flat: true });
-    const mk = (w, h, d) => {
-      const mesh = new T.Mesh(new T.BoxGeometry(w, h, d), m);
-      mesh.castShadow = true; mesh.receiveShadow = true; return mesh;
-    };
-    const zStart = -1.85, zEnd = 0.55;   // 覆盖范围:脚侧 → 近枕侧
+    const m = mat(p.color, { rough: 1 });          // 平滑着色(去掉 flat),像柔软布料
+    const zStart = -1.85, zEnd = 0.55;             // 覆盖范围:脚侧 → 近枕侧
     const span = zEnd - zStart;
-    const n = Math.max(1, Math.round(p.segments));
-    const segLen = span / n;
-    const baseY = 1.02, width = 2.14;
+    const width = 2.34;                             // 略宽于床垫(2.1),自然垂到床沿
+    const thick = 0.30 * p.puff;
+    const baseTop = 1.16;                           // 被面基准高度(床垫上方)
+    const mattressHalf = 1.02;                      // 床垫半宽(超出部分向下垂)
+    const foldN = 1.3 + Math.max(1, p.segments) * 0.45; // 褶皱密度由 segments 调
+    const half = width / 2, halfZ = span / 2;
 
-    for (let i = 0; i < n; i++) {
-      const zc = zStart + segLen * (i + 0.5);
-      const t = n > 1 ? i / (n - 1) : 0.5;
-      const hump = Math.sin(t * Math.PI);             // 中段隆起、两端略低
-      const h = (0.16 + 0.22 * hump) * p.puff;
-      const seg = mk(width, h, segLen * 0.98);
-      seg.position.set(0, baseY + h / 2, zc);
-      seg.rotation.x = R(-1, 1) * p.skew * 0.15;       // 轻微错位 → 褶皱感
-      g.add(seg);
+    const geo = new T.BoxGeometry(width, thick, span, 30, 2, 38);
+    const pos = geo.attributes.position;
+    const v = new T.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      const topFactor = (v.y + thick / 2) / thick;          // 0=底面 1=顶面
+      // 顶面多频褶皱(叠加正弦,带 skew 不对称),只作用于上半部
+      const fold =
+        0.55 * Math.sin(v.x * foldN + 0.4) * Math.cos(v.z * foldN * 0.7) +
+        0.28 * Math.sin(v.x * foldN * 1.9 + v.z * foldN * 1.3 + 1.7) +
+        0.20 * Math.cos(v.z * foldN * 1.5 - 0.6 + v.x * p.skew * 2.0);
+      v.y += fold * 0.15 * p.puff * topFactor;
+      // 中间隆起(被子鼓起来)
+      const dome = Math.max(0, 1 - (v.x / half) ** 2) * Math.max(0, 1 - (v.z / halfZ) ** 2 * 0.4);
+      v.y += 0.12 * p.puff * topFactor * dome;
+      // 左右垂边:超出床垫的列整体向下垂、略外扩
+      const overX = Math.abs(v.x) - mattressHalf;
+      if (overX > 0) {
+        const t = Math.min(1, overX / (half - mattressHalf));
+        v.y -= (0.30 + 0.36 * p.drape) * t * t;
+        v.x += Math.sign(v.x) * 0.06 * t;
+      }
+      // 脚侧(local z≈-halfZ)垂边
+      const overZ = -v.z - (halfZ - 0.24);
+      if (overZ > 0) {
+        const tz = Math.min(1, overZ / 0.24);
+        v.y -= (0.24 + 0.30 * p.drape) * tz * tz;
+        v.z -= 0.06 * tz;
+      }
+      pos.setXYZ(i, v.x, v.y, v.z);
     }
-    // 左右垂边:被子挂在床沿
-    [-1, 1].forEach((s) => {
-      const dh = 0.34 * p.drape;
-      const drapeM = mk(0.07, dh, span);
-      drapeM.position.set(s * (width / 2 - 0.02), baseY - dh / 2 + 0.08, zStart + span / 2);
-      g.add(drapeM);
-    });
-    // 头侧被角翻折
-    const fold = mk(width, 0.12 * p.puff, 0.5);
-    fold.position.set(0, baseY + 0.3 * p.puff, zEnd - 0.08);
-    fold.rotation.x = -0.5;
-    g.add(fold);
+    geo.computeVertexNormals();
+    const quilt = new T.Mesh(geo, m);
+    quilt.castShadow = true; quilt.receiveShadow = true;
+    quilt.position.set(0, baseTop, zStart + halfZ);
+    g.add(quilt);
+
+    // 头侧翻折:一条平缓卷边(压扁圆柱),像掀开的被角
+    const roll = new T.Mesh(
+      new T.CylinderGeometry(0.17 * p.puff, 0.17 * p.puff, width * 0.96, 18, 1), m
+    );
+    roll.rotation.z = Math.PI / 2; roll.scale.set(1, 1, 0.62);
+    roll.position.set(0, baseTop + 0.10 * p.puff, zEnd - 0.14);
+    roll.castShadow = true; roll.receiveShadow = true;
+    g.add(roll);
 
     return g;
   }

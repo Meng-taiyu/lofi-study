@@ -39,21 +39,60 @@ function tickClock() {
 }
 
 const QUOTES = [
+  // —— 坚持 / 上岸 ——
   "再坚持一下,西电在等你。",
   "你现在多学的每一分,都是录取线上的余量。",
-  "别担心结果,先把这一个番茄钟坐满。",
-  "安静地努力,然后惊艳所有人。",
   "上岸的人,只是把今天又重复了一遍。",
-  "困了就抬头看看月亮,然后继续。",
+  "安静地努力,然后惊艳所有人。",
+  "别人在刷手机的时候,你在拉开差距。",
+  "现在的每一道题,都是十二月的底气。",
+  "慢一点没关系,别停下就行。",
+  "你不是在熬,你是在靠近想去的地方。",
+  "三百多天,够把一个普通人变成上岸的人。",
+  "坚持到最后的人,运气都不会太差。",
+  // —— 专注当下 ——
+  "别担心结果,先把这一个番茄钟坐满。",
   "专注当下这道题,未来会谢谢现在的你。",
+  "你只需要赢下现在这 25 分钟。",
+  "把手机放远一点,把世界关在门外。",
+  "进度条不会自己走,但你可以。",
+  "一次只做一件事,把它做到底。",
+  "不要等状态来了再学,学着学着状态就来了。",
+  "现在分心一分钟,等会儿要花十分钟找回状态。",
+  "先动笔,情绪会跟上来的。",
+  "今天的目标不是学完,是别骗自己。",
+  // —— 深夜 / 自我对话 ——
+  "困了就抬头看看月亮,然后继续。",
+  "夜深了,但你的梦想还醒着。",
+  "这盏灯亮着,就说明你还没放弃。",
+  "累是对的,说明你在往上走。",
+  "没有谁的上岸是轻轻松松的。",
+  "熬过这阵子,你会感谢死磕的自己。",
+  "雨在下,你在学,这就够浪漫了。",
+  "情绪稳一点,题目就没那么难了。",
+  "进一寸有进一寸的欢喜。",
+  "你想要的,正在另一头等你去拿。",
+  // —— 方法 / 心态 ——
+  "看不懂就抄一遍,抄不会就背下来。",
+  "错题不是耻辱,是你私人订制的提分清单。",
+  "学不进去的时候,就从最简单的一题开始。",
+  "计划赶不上变化,但有计划的人走得更远。",
+  "比起天赋,西电更看你能不能坐得住。",
+  "今天偷的懒,都会变成考场上的慌。",
+  "状态差也要学,差的状态学一半也比躺着强。",
+  "把'我不想学'换成'我先学十分钟'。",
+  "别和别人比进度,和昨天的自己比。",
+  "你能走到这里,就已经超过了很多放弃的人。",
 ];
-let qi = 0;
+let qi = -1;
 function rotateQuote() {
   const el = $("quote");
   el.style.opacity = 0;
   setTimeout(() => {
-    el.textContent = QUOTES[qi % QUOTES.length];
-    qi++;
+    let n = qi;
+    if (QUOTES.length > 1) while (n === qi) n = Math.floor(Math.random() * QUOTES.length);
+    qi = n;
+    el.textContent = QUOTES[qi];
     el.style.opacity = 1;
   }, 600);
 }
@@ -371,12 +410,38 @@ function toggleRain() {
 /* 雨改由 scene3d.js 的 3D 粒子实现(随雨声开关显隐,见 toggleRain) */
 
 /* ============================== 启动 / 事件绑定 ============================== */
+// 移动端(iOS/微信)音频解锁:必须在用户手势内播放一个静音 buffer 并 resume,
+// 否则 AudioContext 一直挂起,听不到声音。
+function unlockAudio() {
+  const ctx = Audio.ctx;
+  if (!ctx) return;
+  try {
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (e) { /* 忽略 */ }
+  if (ctx.state !== "running") ctx.resume();
+}
+
 function enter() {
   $("gate").classList.add("gone");
   $("ui").classList.remove("hidden");
   try {
     initAudio();
-    if (Audio.ctx.state === "suspended") Audio.ctx.resume();
+    unlockAudio();
+    // 兜底:有些机型首次手势 resume 不生效,后续任一次触摸/点击再恢复一次
+    const kick = () => {
+      if (Audio.ctx && Audio.ctx.state !== "running") {
+        unlockAudio();
+      } else {
+        document.removeEventListener("touchend", kick);
+        document.removeEventListener("click", kick);
+      }
+    };
+    document.addEventListener("touchend", kick, { passive: true });
+    document.addEventListener("click", kick);
   } catch (e) {
     console.warn("音频初始化失败:", e);
   }
