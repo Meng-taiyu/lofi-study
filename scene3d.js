@@ -34,7 +34,7 @@ window.Scene3D = (function () {
     city: { count: 28, rInner: 13, rOuter: 22, hMin: 2.5, hMax: 8, wMin: 1.4, wMax: 2.6, winChance: 0.15 },
     bed: { x: -3.65, z: 0.5, scale: 1, frameColor: 0x39303f, mattressColor: 0x66739c },
     quilt: { color: 0xb87a64, puff: 1, drape: 1, segments: 4, skew: 0.12 },
-    person: { x: -0.3, z: -1.85, scale: 1, bodyColor: 0x2e3350, hairColor: 0x241a22 },
+    person: { x: -0.3, z: -1.85, scale: 1, skinColor: 0xf2c9a0, bodyColor: 0xbcae90, hairColor: 0x3a2a20 },
     rug: { x: -0.4, z: -1.4, w: 4.6, d: 3.4, color: 0x5a3b3a },
     moon: { x: 5, y: 11.5, z: -22, size: 1.4, emi: 1.3 },
     // 窗外地平线高度:房间在高楼,地平线/城市应远在地板之下。
@@ -467,8 +467,9 @@ window.Scene3D = (function () {
   function buildPerson() {
     const p = PARAMS.person;
     const g = new T.Group();
-    const skinMats = [], hairMats = [];
-    const skinMat = (rough) => { const m = mat(p.bodyColor, { rough }); skinMats.push(m); return m; };
+    const skinMats = [], hoodieMats = [], hairMats = [];
+    const skin = (rough) => { const m = mat(p.skinColor, { rough: rough != null ? rough : 0.9 }); skinMats.push(m); return m; };
+    const hoodie = (rough) => { const m = mat(p.bodyColor, { rough: rough != null ? rough : 0.95 }); hoodieMats.push(m); return m; };
     const hairMat = () => { const m = mat(p.hairColor, { rough: 1 }); hairMats.push(m); return m; };
 
     // 椅子(相对 group;x 已去掉 CX=-0.3、z 去掉 CZ=-1.85)
@@ -477,34 +478,52 @@ window.Scene3D = (function () {
     [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.65], [0.55, 0.65]].forEach(([x, z]) =>
       g.add(place(box(0.12, 1.3, 0.12, COL.deskLeg, { rough: 0.8 }), x, 0.65, z)));
 
-    // 圆润小身子
-    const body = new T.Mesh(new T.SphereGeometry(0.56, 24, 20), skinMat(0.9));
-    body.position.set(0, 1.95, 0); body.scale.set(1, 1.15, 0.95); body.castShadow = true; g.add(body);
-    // 头
-    const head = new T.Mesh(new T.SphereGeometry(0.46, 28, 28), skinMat(0.85));
+    // 圆润小身子(卫衣)
+    const body = new T.Mesh(new T.SphereGeometry(0.58, 24, 20), hoodie(0.95));
+    body.position.set(0, 1.95, 0); body.scale.set(1.06, 1.16, 1.0); body.castShadow = true; g.add(body);
+    // 卫衣帽兜(垂在颈后)
+    const hood = new T.Mesh(new T.SphereGeometry(0.42, 20, 16), hoodie(0.95));
+    hood.position.set(0, 2.46, 0.3); hood.scale.set(1.0, 0.72, 0.6); hood.castShadow = true; g.add(hood);
+    // 卫衣口袋(身前)
+    const pocket = new T.Mesh(new T.BoxGeometry(0.52, 0.3, 0.1), hoodie(0.9));
+    pocket.position.set(0, 1.74, -0.52); pocket.castShadow = true; g.add(pocket);
+
+    // 头(肤色)
+    const head = new T.Mesh(new T.SphereGeometry(0.46, 28, 28), skin(0.85));
     head.position.set(0, 2.86, -0.06); head.castShadow = true; g.add(head);
-    // 圆头发 + 小揪揪
-    const hair = new T.Mesh(new T.SphereGeometry(0.5, 24, 24), hairMat());
-    hair.position.set(0, 2.93, 0.05); hair.scale.set(1.04, 1.02, 0.95); hair.castShadow = true; g.add(hair);
-    const bun = new T.Mesh(new T.SphereGeometry(0.16, 16, 16), hairMat());
-    bun.position.set(0, 3.42, 0.04); bun.castShadow = true; g.add(bun);
+    // 男生中等长度头发:头顶主体 + 颈后垂发 + 前额刘海
+    const hairTop = new T.Mesh(new T.SphereGeometry(0.5, 24, 24), hairMat());
+    hairTop.position.set(0, 2.97, 0.02); hairTop.scale.set(1.08, 1.06, 1.06); hairTop.castShadow = true; g.add(hairTop);
+    const hairBack = new T.Mesh(new T.SphereGeometry(0.34, 20, 20), hairMat());
+    hairBack.position.set(0, 2.66, 0.26); hairBack.scale.set(1.12, 1.05, 0.7); hairBack.castShadow = true; g.add(hairBack);
+    const fringe = new T.Mesh(new T.SphereGeometry(0.3, 20, 20), hairMat());
+    fringe.position.set(0, 3.0, -0.36); fringe.scale.set(1.35, 0.6, 0.7); fringe.castShadow = true; g.add(fringe);
+
     // 耳机:头梁 + 两只耳罩
-    const band = new T.Mesh(new T.TorusGeometry(0.5, 0.06, 10, 24, Math.PI), mat(COL.phones, { rough: 0.5 }));
-    band.position.set(0, 2.88, -0.04); g.add(band);
-    [-0.5, 0.5].forEach((x) => {
-      const cup = new T.Mesh(new T.SphereGeometry(0.13, 18, 18), mat(COL.phones, { rough: 0.5 }));
-      cup.position.set(x, 2.84, -0.04); cup.scale.set(0.85, 1, 1); g.add(cup);
+    const band = new T.Mesh(new T.TorusGeometry(0.53, 0.06, 10, 24, Math.PI), mat(COL.phones, { rough: 0.5 }));
+    band.position.set(0, 2.9, -0.02); g.add(band);
+    [-0.53, 0.53].forEach((x) => {
+      const cup = new T.Mesh(new T.SphereGeometry(0.14, 18, 18), mat(COL.phones, { rough: 0.5 }));
+      cup.position.set(x, 2.84, -0.04); cup.scale.set(0.82, 1, 1); g.add(cup);
     });
-    // 小手搭桌
-    [-0.4, 0.4].forEach((x) => {
-      const arm = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, 0.8, 12), skinMat(0.9));
-      arm.position.set(x, 2.0, -0.55); arm.rotation.x = 0.95; arm.castShadow = true; g.add(arm);
-    });
+
+    // 手臂(卫衣袖子)+ 手(肤色),右手在写字
+    const lArm = new T.Mesh(new T.CylinderGeometry(0.13, 0.12, 0.82, 12), hoodie(0.95));
+    lArm.position.set(-0.4, 2.0, -0.55); lArm.rotation.x = 0.95; lArm.castShadow = true; g.add(lArm);
+    const rArm = new T.Mesh(new T.CylinderGeometry(0.13, 0.12, 0.86, 12), hoodie(0.95));
+    rArm.position.set(0.3, 1.98, -0.58); rArm.rotation.set(1.02, 0, 0.16); rArm.castShadow = true; g.add(rArm);
+    const lHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
+    lHand.position.set(-0.4, 1.58, -0.9); lHand.castShadow = true; g.add(lHand);
+    const rHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
+    rHand.position.set(0.16, 1.56, -0.94); rHand.castShadow = true; g.add(rHand);
+    // 笔
+    const pen = new T.Mesh(new T.CylinderGeometry(0.02, 0.02, 0.34, 8), mat(0xf2c14e, { rough: 0.4 }));
+    pen.position.set(0.08, 1.6, -1.0); pen.rotation.set(0.7, 0.2, 0.5); g.add(pen);
 
     g.position.set(p.x, 0, p.z);
     g.scale.setScalar(p.scale);
     scene.add(g);
-    refs.personGroup = g; refs.personSkinMats = skinMats; refs.personHairMats = hairMats;
+    refs.personGroup = g; refs.personSkinMats = skinMats; refs.personHoodieMats = hoodieMats; refs.personHairMats = hairMats;
   }
 
   /* ============================== 窗外:月亮 / 城市 ============================== */
@@ -703,7 +722,8 @@ window.Scene3D = (function () {
         const p = PARAMS.person;
         refs.personGroup.position.set(p.x, 0, p.z);
         refs.personGroup.scale.setScalar(p.scale);
-        refs.personSkinMats.forEach((m) => m.color.setHex(p.bodyColor));
+        refs.personSkinMats.forEach((m) => m.color.setHex(p.skinColor));
+        refs.personHoodieMats.forEach((m) => m.color.setHex(p.bodyColor));
         refs.personHairMats.forEach((m) => m.color.setHex(p.hairColor));
         break;
       }
