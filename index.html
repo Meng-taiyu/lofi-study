@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="icon-180.png" />
 <link rel="icon" type="image/png" href="icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=1.5.0" />
+<link rel="stylesheet" href="styles.css?v=1.6.0" />
 </head>
 <body>
 
@@ -54,6 +54,7 @@
   <!-- 底部:声音 / 全屏 控制栏 -->
   <div class="panel dock">
     <button id="musicToggle" class="iconbtn" title="音乐">♪</button>
+    <button id="trackBtn" class="iconbtn trackbtn" title="切换音乐">♫ 雨巷</button>
     <input id="musicVol" class="slider" type="range" min="0" max="100" value="55" title="音乐音量"/>
     <span class="sep"></span>
     <button id="rainToggle" class="iconbtn" title="雨声">☂</button>
@@ -83,8 +84,8 @@
     <div id="todoHint" class="todo-hint"></div>
   </div>
 
-  <div class="nowplaying">♪ lo-fi beats · 实时生成 · 无限循环</div>
-  <div class="ver" id="ver">v1.5.0</div>
+  <div class="nowplaying">♪ 雨巷 · 实时生成 · 无限循环</div>
+  <div class="ver" id="ver">v1.6.0</div>
 </div>
 
 <!-- ===== 登录 / 云端同步弹窗 ===== -->
@@ -135,11 +136,11 @@
 <script src="vendor/three.min.js"></script>
 <script src="vendor/OrbitControls.js"></script>
 <script src="vendor/TransformControls.js"></script>
-<script src="scene3d.js?v=1.5.0"></script>
+<script src="scene3d.js?v=1.6.0"></script>
 <script src="vendor/supabase.js"></script>
-<script src="cloud.js?v=1.5.0"></script>
-<script src="app.js?v=1.5.0"></script>
+<script src="cloud.js?v=1.6.0"></script>
+<script src="app.js?v=1.6.0"></script>
 <!-- 可视化编辑器:仅当 URL 带 ?edit 时激活,正常访客零负担 -->
-<script src="editor.js?v=1.5.0"></script>
+<script src="editor.js?v=1.6.0"></script>
 </body>
 </html>

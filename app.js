@@ -41,6 +41,7 @@ function saveState() {
       rainVol: +$("rainVol").value,
       musicOn: Audio.musicOn,
       rainOn: Audio.rainOn,
+      track: selectedTrackIdx(),
     }));
   } catch (e) { /* 隐私模式等存储不可用,忽略 */ }
   scheduleCloudPush();   // 已登录则同步到云端(防抖)
@@ -57,6 +58,7 @@ function scheduleCloudPush() {
       focus_min: timer.focusMin, break_min: timer.breakMin,
       music_vol: +$("musicVol").value, rain_vol: +$("rainVol").value,
       music_on: Audio.musicOn, rain_on: Audio.rainOn,
+      track: selectedTrackIdx(),
     });
   }, 800);
 }
@@ -82,6 +84,7 @@ async function loadFromCloud() {
     Audio.rainOn = s.rain_on !== false;
     $("musicToggle").classList.toggle("off", !Audio.musicOn);
     $("rainToggle").classList.toggle("off", !Audio.rainOn);
+    if (Number.isFinite(s.track)) setTrack(s.track);
     // 若音频已启动,同步音量
     if (Audio.ctx) {
       setMusicVol(Audio.musicOn ? $("musicVol").value / 100 : 0);
@@ -131,6 +134,8 @@ function applySavedState() {
   // 开关(此时音频还没启动,先记状态,enter() 里应用)
   if (st.musicOn === false) { Audio.musicOn = false; $("musicToggle").classList.add("off"); }
   if (st.rainOn === false) { Audio.rainOn = false; $("rainToggle").classList.add("off"); }
+  // 曲目选择(音频未启动,setTrack 会直接设为当前并刷新标签)
+  if (Number.isFinite(st.track)) setTrack(st.track);
 }
 
 /* 场景(房间/灯光/家具/夜景/雨)已迁移到 scene3d.js —— Three.js 等距 3D 房间 */
@@ -305,20 +310,61 @@ const Audio = {
   ctx: null, master: null, musicBus: null, rainGain: null, reverb: null,
   musicOn: true, rainOn: true,
   rainSrc: null,
-  // 调度
-  tempo: 72, step: 0, bar: 0, nextTime: 0, schedIv: null,
+  // 调度(tempo/swing 等改由当前曲目 Audio.track 提供)
+  step: 0, bar: 0, nextTime: 0, schedIv: null,
   noiseBuf: null,
+  // 曲目:trackIdx=正在播放;pendingIdx!=null 表示已选、待小节边界切换
+  trackIdx: 0, pendingIdx: null, track: null,
 };
 
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
-// ii–V–I–vi(C 大调):Dm7 – G7 – Cmaj7 – Am7
-const PROG = [
-  [50, 53, 57, 60],  // Dm7
-  [55, 59, 62, 65],  // G7
-  [48, 52, 55, 59],  // Cmaj7
-  [45, 48, 52, 55],  // Am7
+
+/* —— 可切换曲目预设:都在柔和 lo-fi 家族内(无 hi-hat / 黑胶噪点 / 刺耳军鼓) ——
+   prog=和弦(MIDI),scale=旋律音池,drums.kick/snare=该鼓出现的 16 分步,
+   空数组=无该鼓;revMul=旋律/pad 的混响送量倍率。 */
+const TRACKS = [
+  { // 0 · 雨巷:温柔雨夜爵士(= 原曲,默认)
+    name: "雨巷", tempo: 72, swing: 0.18,
+    prog: [[50,53,57,60],[55,59,62,65],[48,52,55,59],[45,48,52,55]], // Dm7–G7–Cmaj7–Am7
+    scale: [69,72,74,76,79,81], // A 小调五声
+    pad:    { type: "triangle", level: 0.05, detune: 0.06 },
+    bass:   { level: 0.20, cut: 320 },
+    melody: { type: "sine", level: 0.07, onProb: 0.45, offProb: 0.12, octChance: 0.25 },
+    drums:  { kick: [0, 8], snare: [4, 12], kickLevel: 0.22, snareLevel: 0.05 },
+    revMul: 1,
+  },
+  { // 1 · 暖阳午后:明亮大调、稍快、慵懒
+    name: "暖阳午后", tempo: 78, swing: 0.16,
+    prog: [[48,52,55,59],[45,48,52,55],[53,57,60,64],[55,59,62,65]], // Cmaj7–Am7–Fmaj7–G7
+    scale: [67,69,72,74,76,79], // C 大调五声
+    pad:    { type: "triangle", level: 0.05, detune: 0.05 },
+    bass:   { level: 0.20, cut: 360 },
+    melody: { type: "triangle", level: 0.06, onProb: 0.50, offProb: 0.16, octChance: 0.20 },
+    drums:  { kick: [0, 8], snare: [4, 12], kickLevel: 0.20, snareLevel: 0.045 },
+    revMul: 0.9,
+  },
+  { // 2 · 星海:慢、梦幻、高把位铺底、重混响、极简鼓
+    name: "星海", tempo: 60, swing: 0.20,
+    prog: [[57,60,64,67],[53,57,60,64],[55,59,62,65],[52,55,59,62]], // Am7–Fmaj7–G7–Em7(高八度)
+    scale: [69,72,76,79,81], // 稀疏高音
+    pad:    { type: "sine", level: 0.055, detune: 0.05 },
+    bass:   { level: 0.18, cut: 260 },
+    melody: { type: "sine", level: 0.06, onProb: 0.30, offProb: 0.06, octChance: 0.15 },
+    drums:  { kick: [0], snare: [], kickLevel: 0.16, snareLevel: 0 },
+    revMul: 1.5,
+  },
+  { // 3 · 雪夜:超柔、无鼓、厚 pad、温暖
+    name: "雪夜", tempo: 68, swing: 0.14,
+    prog: [[53,57,60,64],[48,52,55,59],[50,53,57,60],[45,48,52,55]], // Fmaj7–Cmaj7–Dm7–Am7
+    scale: [69,72,74,76,79], // A 小调五声(中音区)
+    pad:    { type: "triangle", level: 0.06, detune: 0.08 },
+    bass:   { level: 0.20, cut: 300 },
+    melody: { type: "sine", level: 0.055, onProb: 0.35, offProb: 0.05, octChance: 0.10 },
+    drums:  { kick: [], snare: [], kickLevel: 0, snareLevel: 0 },
+    revMul: 1.4,
+  },
 ];
-const PENTA = [69, 72, 74, 76, 79, 81]; // A 小调五声
+Audio.track = TRACKS[0];
 
 function makeNoise(seconds) {
   const len = Audio.ctx.sampleRate * seconds;
@@ -411,14 +457,14 @@ function tone(freq, t, dur, type, peak, dest, atk, rel) {
 }
 
 /* —— 鼓 —— */
-function kick(t) {
+function kick(t, level) {
   const ctx = Audio.ctx;
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.frequency.setValueAtTime(125, t);
   o.frequency.exponentialRampToValueAtTime(45, t + 0.13);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(level != null ? level : 0.22, t + 0.01);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
   o.connect(g); g.connect(Audio.musicBus);
   o.start(t); o.stop(t + 0.24);
@@ -436,15 +482,24 @@ function noiseHit(t, dur, peak, hp, lp) {
   s.start(t); s.stop(t + dur + 0.02);
 }
 
+/* —— 旋律/pad 的混响送量(随曲目 revMul 缩放) —— */
+function revSend(node, mul) {
+  if (!Audio._revIn) return;
+  if (mul == null || mul === 1) { node.connect(Audio._revIn); return; }
+  const sg = Audio.ctx.createGain();
+  sg.gain.value = mul;
+  node.connect(sg); sg.connect(Audio._revIn);
+}
+
 /* —— 调度器(lookahead) —— */
 function scheduler() {
   if (!Audio.musicOn) { // 仍推进时间,避免恢复时跳变
     Audio.nextTime = Audio.ctx.currentTime + 0.12;
     return;
   }
-  const sec16 = 60 / Audio.tempo / 4;
+  const sec16 = 60 / Audio.track.tempo / 4;
   while (Audio.nextTime < Audio.ctx.currentTime + 0.2) {
-    const swing = (Audio.step % 2 === 1) ? sec16 * 0.18 : 0;
+    const swing = (Audio.step % 2 === 1) ? sec16 * Audio.track.swing : 0;
     scheduleStep(Audio.step, Audio.nextTime + swing, sec16);
     Audio.nextTime += sec16;
     Audio.step = (Audio.step + 1) % 16;
@@ -452,50 +507,55 @@ function scheduler() {
   }
 }
 function scheduleStep(step, t, sec16) {
-  const chord = PROG[Audio.bar % PROG.length];
+  // 小节起点:若有待切曲目,在此整小节边界换,避免半小节和弦打架
+  if (step === 0 && Audio.pendingIdx != null && Audio.pendingIdx !== Audio.trackIdx) {
+    Audio.trackIdx = Audio.pendingIdx;
+    Audio.track = TRACKS[Audio.trackIdx];
+    Audio.pendingIdx = null;
+  }
+  const tk = Audio.track;
+  const chord = tk.prog[Audio.bar % tk.prog.length];
 
   // 每小节起:铺底和弦 pad
   if (step === 0) {
     const barLen = sec16 * 16;
+    const d = tk.pad.detune;
     chord.forEach((m) => {
-      [-0.06, 0.06].forEach((det) => {
+      [-d, d].forEach((det) => {
         const g = tone(mtof(m) * (1 + det / 12), t, barLen * 0.95,
-          "triangle", 0.05, Audio.musicBus, 0.7, 0.5);
-        // pad 送一点混响
-        g.connect(Audio._revIn);
+          tk.pad.type, tk.pad.level, Audio.musicBus, 0.7, 0.5);
+        revSend(g, tk.revMul); // pad 送一点混响
       });
     });
     // 低音根音
-    bassNote(chord[0] - 12, t, barLen * 0.48);
+    bassNote(chord[0] - 12, t, barLen * 0.48, tk.bass.level, tk.bass.cut);
   }
   // 小节中点再补一下低音
-  if (step === 8) bassNote(chord[0] - 12, t, sec16 * 8 * 0.46);
+  if (step === 8) bassNote(chord[0] - 12, t, sec16 * 8 * 0.46, tk.bass.level, tk.bass.cut);
 
-  // 鼓:1、3 拍底鼓
-  if (step === 0 || step === 8) kick(t);
-  // 2、4 拍军鼓(改柔:调暗调轻,从"嚓"变成闷一点的"哒")
-  if (step === 4 || step === 12) noiseHit(t, 0.14, 0.05, 700, 2600);
-  // 反拍 hi-hat(已移除:用户不喜欢这种"嚓嚓"噪声)
+  // 鼓:由曲目定义(空数组=无该鼓);保持柔和,不引入明亮/噪声打击乐
+  if (tk.drums.kick.indexOf(step) !== -1) kick(t, tk.drums.kickLevel);
+  // 军鼓(柔:调暗调轻,从"嚓"变成闷一点的"哒")
+  if (tk.drums.snare.indexOf(step) !== -1) noiseHit(t, 0.14, tk.drums.snareLevel, 700, 2600);
 
   // 旋律:稀疏,落在拍点上
+  const mel = tk.melody;
   const onBeat = step % 4 === 0;
-  if ((onBeat && Math.random() < 0.45) || (!onBeat && Math.random() < 0.12)) {
-    const note = PENTA[Math.floor(Math.random() * PENTA.length)] +
-      (Math.random() < 0.25 ? 12 : 0);
+  if ((onBeat && Math.random() < mel.onProb) || (!onBeat && Math.random() < mel.offProb)) {
+    const note = tk.scale[Math.floor(Math.random() * tk.scale.length)] +
+      (Math.random() < mel.octChance ? 12 : 0);
     const g = tone(mtof(note), t, sec16 * (Math.random() < 0.4 ? 4 : 2),
-      "sine", 0.07, Audio.musicBus, 0.02, 0.5);
-    g.connect(Audio._revIn);
+      mel.type, mel.level, Audio.musicBus, 0.02, 0.5);
+    revSend(g, tk.revMul);
   }
-
-  // 黑胶噪点(已移除:用户不喜欢这种"滋滋"静电声)
 }
-function bassNote(m, t, dur) {
+function bassNote(m, t, dur, level, cut) {
   const ctx = Audio.ctx;
   const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = mtof(m);
-  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 320;
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = cut != null ? cut : 320;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.2, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(level != null ? level : 0.2, t + 0.03);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(lp); lp.connect(g); g.connect(Audio.musicBus);
   o.start(t); o.stop(t + dur + 0.05);
@@ -536,6 +596,31 @@ function toggleRain() {
   if (window.Scene3D) Scene3D.setRain(Audio.rainOn); // 联动窗外雨
   saveState();
 }
+
+/* —— 曲目切换 —— */
+// 当前“已选”曲目(pending 优先):用于 UI 与存盘,即使真正切换发生在下一小节
+function selectedTrackIdx() {
+  return Audio.pendingIdx != null ? Audio.pendingIdx : Audio.trackIdx;
+}
+function updateTrackLabel() {
+  const name = TRACKS[selectedTrackIdx()].name;
+  const btn = $("trackBtn");
+  if (btn) btn.textContent = "♫ " + name;
+  const np = document.querySelector(".nowplaying");
+  if (np) np.textContent = "♪ " + name + " · 实时生成 · 无限循环";
+}
+// 选定曲目:音乐已在播则下一小节边界平滑切;未启动则直接设为当前
+function setTrack(i) {
+  i = ((i % TRACKS.length) + TRACKS.length) % TRACKS.length;
+  if (Audio.ctx) {
+    Audio.pendingIdx = i;            // 在 scheduleStep 的 step===0 处真正切换
+  } else {
+    Audio.trackIdx = i; Audio.track = TRACKS[i]; Audio.pendingIdx = null;
+  }
+  updateTrackLabel();
+  saveState();
+}
+function cycleTrack() { setTrack(selectedTrackIdx() + 1); }
 
 /* 雨改由 scene3d.js 的 3D 粒子实现(随雨声开关显隐,见 toggleRain) */
 
@@ -603,6 +688,7 @@ function bindUI() {
 
   // 声音
   $("musicToggle").addEventListener("click", toggleMusic);
+  $("trackBtn").addEventListener("click", cycleTrack);
   $("rainToggle").addEventListener("click", toggleRain);
   $("musicVol").addEventListener("input", (e) => {
     if (Audio.musicOn) setMusicVol(e.target.value / 100);

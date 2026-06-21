@@ -23,7 +23,7 @@ window.Scene3D = (function () {
 
   /* —— 可调参数(editor 实时改这里 + 调 apply/rebuild;也是导出的对象) —— */
   const PARAMS = {
-    camera: { posX: 11, posY: 9, posZ: 11, targetX: 0, targetY: 2.2, targetZ: -1, frustum: 6.6, zoom: 1, drift: true },
+    camera: { posX: 12, posY: 9.6, posZ: 12, targetX: 0.6, targetY: 2.3, targetZ: -0.2, frustum: 7.4, zoom: 1, drift: true },
     lighting: {
       hemiInt: 0.36, ambInt: 0.24,
       moonInt: 0.92, moonColor: 0x9fc0ff, moonX: 3, moonY: 10, moonZ: -14,
@@ -133,6 +133,7 @@ window.Scene3D = (function () {
     buildPerson();
     buildMoon();
     refs.cityGroup = buildCity(PARAMS.city); scene.add(refs.cityGroup);
+    buildCozy();       // 温馨摆件:串灯 / 落地灯 / 书架 / 挂画
     buildAtmosphere();
     applyBackdrop();   // 城市/天空/远地面 下移到 horizonY,形成高楼俯瞰的地平线
 
@@ -183,11 +184,11 @@ window.Scene3D = (function () {
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
     moon.shadow.camera.near = 1;
-    moon.shadow.camera.far = 45;
-    moon.shadow.camera.left = -10;
-    moon.shadow.camera.right = 10;
-    moon.shadow.camera.top = 10;
-    moon.shadow.camera.bottom = -10;
+    moon.shadow.camera.far = 55;
+    moon.shadow.camera.left = -13;
+    moon.shadow.camera.right = 13;
+    moon.shadow.camera.top = 13;
+    moon.shadow.camera.bottom = -13;
     moon.shadow.bias = -0.0006;
     scene.add(moon);
     scene.add(moon.target);
@@ -240,10 +241,12 @@ window.Scene3D = (function () {
   }
 
   /* ============================== 房间 ============================== */
+  // 房间向敞开侧(相机/+x/+z)扩大、层高抬高;后墙(z=-5)与左墙(x=-5)锚定不动,
+  // 故后左角的家具无需移动、不会浮空。地板 x∈[-5,8]、z∈[-5,7],墙高 7。
   function buildRoom() {
     // 地板
-    const floor = new T.Mesh(new T.BoxGeometry(10, 0.3, 10), mat(COL.floor, { rough: 0.95 }));
-    floor.position.set(0, -0.15, 0);
+    const floor = new T.Mesh(new T.BoxGeometry(13, 0.3, 12), mat(COL.floor, { rough: 0.95 }));
+    floor.position.set(1.5, -0.15, 1);
     floor.receiveShadow = true; floor.castShadow = false;
     scene.add(floor);
 
@@ -259,13 +262,13 @@ window.Scene3D = (function () {
     const wBack = mat(COL.wallBack), wLeft = mat(COL.wallLeft);
     const frameMat = mat(COL.wallTrim, { rough: 0.7 });
 
-    // 后墙(z=-5,朝 +z)—— 4 块拼出窗洞(x∈[-2.4,2.4], y∈[1.9,4.5])
+    // 后墙(z=-5,朝 +z)—— 4 块拼出窗洞(x∈[-2.4,2.4], y∈[1.9,4.5]);墙宽 13、层高 7
     const back = new T.Group();
     const seg = (w, h, x, y) => {
       const m = new T.Mesh(new T.BoxGeometry(w, h, 0.3), wBack);
       m.position.set(x, y, -5); m.receiveShadow = true; m.castShadow = true; back.add(m);
     };
-    seg(10, 1.9, 0, 0.95); seg(10, 1.5, 0, 5.25); seg(2.6, 2.6, -3.7, 3.2); seg(2.6, 2.6, 3.7, 3.2);
+    seg(13, 1.9, 1.5, 0.95); seg(13, 2.5, 1.5, 5.75); seg(2.6, 2.6, -3.7, 3.2); seg(5.6, 2.6, 5.2, 3.2);
     const fr = (w, h, x, y) => {
       const m = new T.Mesh(new T.BoxGeometry(w, h, 0.12), frameMat);
       m.position.set(x, y, -4.82); m.castShadow = true; m.receiveShadow = true; back.add(m);
@@ -274,17 +277,17 @@ window.Scene3D = (function () {
     fr(0.12, 2.6, 0, 3.2); fr(4.8, 0.12, 0, 3.2);
     scene.add(back);
 
-    // 左墙(x=-5,朝 +x)—— 整面实墙(不开窗)
-    const left = new T.Mesh(new T.BoxGeometry(0.3, 6, 10), wLeft);
-    left.position.set(-5, 3, 0); left.receiveShadow = true; left.castShadow = true;
+    // 左墙(x=-5,朝 +x)—— 整面实墙(不开窗);墙深 12、层高 7
+    const left = new T.Mesh(new T.BoxGeometry(0.3, 7, 12), wLeft);
+    left.position.set(-5, 3.5, 1); left.receiveShadow = true; left.castShadow = true;
     scene.add(left);
 
     // 踢脚 / 墙角暗线(增加纵深)
     const trim = mat(COL.wallTrim, { rough: 0.9 });
-    const baseB = new T.Mesh(new T.BoxGeometry(10, 0.3, 0.34), trim);
-    place(baseB, 0, 0.15, -4.83); baseB.receiveShadow = true; scene.add(baseB);
-    const baseL = new T.Mesh(new T.BoxGeometry(0.34, 0.3, 10), trim);
-    place(baseL, -4.83, 0.15, 0); baseL.receiveShadow = true; scene.add(baseL);
+    const baseB = new T.Mesh(new T.BoxGeometry(13, 0.3, 0.34), trim);
+    place(baseB, 1.5, 0.15, -4.83); baseB.receiveShadow = true; scene.add(baseB);
+    const baseL = new T.Mesh(new T.BoxGeometry(0.34, 0.3, 12), trim);
+    place(baseL, -4.83, 0.15, 1); baseL.receiveShadow = true; scene.add(baseL);
   }
 
   /* ============================== 家具摆件(不含台灯) ============================== */
@@ -507,18 +510,18 @@ window.Scene3D = (function () {
       cup.position.set(x, 2.84, -0.04); cup.scale.set(0.82, 1, 1); g.add(cup);
     });
 
-    // 手臂(卫衣袖子)+ 手(肤色),右手在写字
-    const lArm = new T.Mesh(new T.CylinderGeometry(0.13, 0.12, 0.82, 12), hoodie(0.95));
-    lArm.position.set(-0.4, 2.0, -0.55); lArm.rotation.x = 0.95; lArm.castShadow = true; g.add(lArm);
-    const rArm = new T.Mesh(new T.CylinderGeometry(0.13, 0.12, 0.86, 12), hoodie(0.95));
-    rArm.position.set(0.3, 1.98, -0.58); rArm.rotation.set(1.02, 0, 0.16); rArm.castShadow = true; g.add(rArm);
+    // 手臂(卫衣袖子)短前臂平搭在桌面(桌面世界 y≈2.09)+ 手(肤色)写字
+    const lArm = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 0.64, 12), hoodie(0.95));
+    lArm.position.set(-0.34, 2.16, -0.62); lArm.rotation.x = Math.PI / 2; lArm.castShadow = true; g.add(lArm);
+    const rArm = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 0.64, 12), hoodie(0.95));
+    rArm.position.set(0.3, 2.16, -0.62); rArm.rotation.set(Math.PI / 2, 0.5, 0); rArm.castShadow = true; g.add(rArm);
     const lHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
-    lHand.position.set(-0.4, 1.58, -0.9); lHand.castShadow = true; g.add(lHand);
+    lHand.position.set(-0.34, 2.18, -0.96); lHand.castShadow = true; g.add(lHand);
     const rHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
-    rHand.position.set(0.16, 1.56, -0.94); rHand.castShadow = true; g.add(rHand);
-    // 笔
-    const pen = new T.Mesh(new T.CylinderGeometry(0.02, 0.02, 0.34, 8), mat(0xf2c14e, { rough: 0.4 }));
-    pen.position.set(0.08, 1.6, -1.0); pen.rotation.set(0.7, 0.2, 0.5); g.add(pen);
+    rHand.position.set(0.12, 2.18, -0.92); rHand.castShadow = true; g.add(rHand);
+    // 笔(右手握,斜尖向桌面)
+    const pen = new T.Mesh(new T.CylinderGeometry(0.02, 0.02, 0.3, 8), mat(0xf2c14e, { rough: 0.4 }));
+    pen.position.set(0.08, 2.22, -1.0); pen.rotation.set(0.9, 0.2, 0.5); g.add(pen);
 
     g.position.set(p.x, 0, p.z);
     g.scale.setScalar(p.scale);
@@ -537,6 +540,130 @@ window.Scene3D = (function () {
       new T.MeshBasicMaterial({ color: 0xcdd9f2, transparent: true, opacity: 0.12 }));
     halo.position.copy(moon.position); halo.scale.copy(moon.scale); scene.add(halo);
     refs.moonMesh = moon; refs.moonMat = moonMat; refs.moonHalo = halo;
+  }
+
+  /* ============================== 温馨摆件 ============================== */
+  // 串灯 / 落地灯+前景软装 / 书架 / 挂画。只加暖色物件与一处局部暖光,
+  // 不动全局冷色环境光,保持「冷夜底 + 暖光」的冷暖对比。
+  function buildCozy() {
+    buildFairyLights();   // 窗顶暖色串灯(自发光)
+    buildReadingNook();   // 扩出的前右空地:落地灯(暖光)+ 圆地毯 + 坐垫
+    buildBookshelf();     // 靠左墙的小书架 + 彩色书
+    buildWallArt();       // 左墙挂画
+  }
+
+  // 暖色串灯:沿窗顶/后墙挂一串自发光小灯泡,正弦下垂成弧线
+  function buildFairyLights() {
+    const g = new T.Group();
+    const N = 16, x0 = -3.2, x1 = 3.2, z = -4.74, yTop = 4.82, sag = 0.5;
+    const wireMat = mat(0x141414, { rough: 0.8 });
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1);
+      pts.push(new T.Vector3(x0 + (x1 - x0) * f, yTop - Math.sin(f * Math.PI) * sag, z));
+    }
+    // 细线:相邻灯泡之间连一截细圆柱
+    const up = new T.Vector3(0, 1, 0);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const cyl = new T.Mesh(new T.CylinderGeometry(0.012, 0.012, a.distanceTo(b), 6), wireMat);
+      cyl.position.copy(a).add(b).multiplyScalar(0.5);
+      cyl.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize());
+      cyl.castShadow = false; cyl.receiveShadow = false; g.add(cyl);
+    }
+    // 暖色灯泡(自发光,垂在线下),记录材质供动画轻微闪烁
+    refs.fairy = [];
+    const baseEmi = 1.8;
+    pts.forEach((p, i) => {
+      const m = mat(0xffe2ad, { emissive: 0xffd9a0, emi: baseEmi, rough: 1 });
+      const bulb = new T.Mesh(new T.SphereGeometry(0.055, 10, 10), m);
+      bulb.position.set(p.x, p.y - 0.07, p.z + 0.02);
+      bulb.castShadow = false; bulb.receiveShadow = false; g.add(bulb);
+      refs.fairy.push({ mat: m, base: baseEmi, phase: i * 0.7 });
+    });
+    scene.add(g);
+    refs.fairyGroup = g;
+  }
+
+  // 阅读角(前右扩出空地):暖色圆地毯 + 坐垫 + 落地灯(第二处局部暖光)
+  function buildReadingNook() {
+    const cx = 4.8, cz = 3.2;
+    const rug = new T.Mesh(new T.CylinderGeometry(1.6, 1.6, 0.05, 32), mat(0x7a4a3c, { rough: 1 }));
+    rug.position.set(cx, 0.025, cz); rug.receiveShadow = true; rug.castShadow = false; scene.add(rug);
+
+    const cushion = new T.Mesh(new T.CylinderGeometry(0.5, 0.56, 0.28, 20), mat(0xb5743f, { rough: 1 }));
+    cushion.position.set(cx - 0.2, 0.2, cz + 0.3); cushion.castShadow = true; cushion.receiveShadow = true; scene.add(cushion);
+    const button = new T.Mesh(new T.SphereGeometry(0.05, 8, 8), mat(0x8a5630, { rough: 1 }));
+    button.position.set(cx - 0.2, 0.34, cz + 0.3); scene.add(button);
+
+    // 落地灯:底座 + 立杆 + 暖灯罩 + 灯泡 + 暖色点光(局部暖光池)
+    const lg = new T.Group();
+    lg.add(place(new T.Mesh(new T.CylinderGeometry(0.22, 0.26, 0.08, 18), mat(0x2a2620, { metal: 0.3, rough: 0.6 })), 0, 0.04, 0));
+    lg.add(place(new T.Mesh(new T.CylinderGeometry(0.04, 0.04, 3.0, 10), mat(0x2a2620, { metal: 0.4, rough: 0.5 })), 0, 1.5, 0));
+    const shadeMat = mat(0xffcf9a, { rough: 0.5, emissive: 0xff9a4a, emi: 0.5 });
+    const shade = new T.Mesh(new T.CylinderGeometry(0.34, 0.46, 0.5, 20, 1, true), shadeMat);
+    shade.position.set(0, 3.05, 0); shade.castShadow = false; lg.add(shade);
+    lg.add(place(new T.Mesh(new T.SphereGeometry(0.09, 12, 12), mat(0xfff0c8, { emissive: 0xffcf87, emi: 1.3, rough: 1 })), 0, 3.0, 0));
+    const light = new T.PointLight(0xffb070, 1.3, 7.5, 2);
+    light.position.set(0, 2.96, 0);
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    light.shadow.camera.near = 0.2; light.shadow.camera.far = 9;
+    light.shadow.bias = -0.0015;
+    lg.add(light);
+    lg.position.set(cx + 0.7, 0, cz - 0.6);
+    scene.add(lg);
+    refs.floorLamp = lg;
+  }
+
+  // 靠左墙的小书架 + 几本彩色书
+  function buildBookshelf() {
+    const g = new T.Group();
+    const wood = mat(0x5a3f2e, { rough: 0.8 });
+    const W = 1.8, H = 2.4, D = 0.5, th = 0.07;
+    g.add(place(new T.Mesh(new T.BoxGeometry(th, H, D), wood), -W / 2, H / 2, 0)); // 左板
+    g.add(place(new T.Mesh(new T.BoxGeometry(th, H, D), wood), W / 2, H / 2, 0));  // 右板
+    g.add(place(new T.Mesh(new T.BoxGeometry(W, th, D), wood), 0, H, 0));          // 顶板
+    g.add(place(new T.Mesh(new T.BoxGeometry(W, th, D), wood), 0, 0.03, 0));       // 底板
+    g.add(place(new T.Mesh(new T.BoxGeometry(W, H, th), wood), 0, H / 2, -D / 2 + th / 2)); // 背板
+    const cols = [0x9c4a4a, 0x4a6a8a, 0xc9a24a, 0x4a7a5a, 0x7a4a7a, 0xb5713f];
+    const shelves = 3;
+    for (let s = 1; s <= shelves; s++) {
+      const y = (H / (shelves + 1)) * s;
+      g.add(place(new T.Mesh(new T.BoxGeometry(W - th, th, D), wood), 0, y, 0)); // 隔板
+      let bx = -W / 2 + 0.15;
+      while (bx < W / 2 - 0.2) {
+        const bw = R(0.07, 0.13), bh = R(0.34, 0.5);
+        const book = new T.Mesh(new T.BoxGeometry(bw, bh, R(0.3, 0.42)),
+          mat(cols[Math.floor(R(0, cols.length))], { rough: 0.9 }));
+        book.position.set(bx + bw / 2, y + bh / 2 + th / 2, R(-0.04, 0.06));
+        g.add(book);
+        bx += bw + 0.015;
+      }
+    }
+    g.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    g.position.set(-4.6, 0, 2.7);
+    scene.add(g);
+    refs.bookshelf = g;
+  }
+
+  // 左墙挂画:画框 + 彩色画芯(微自发光,夜里不至于全黑)
+  function buildWallArt() {
+    const g = new T.Group();
+    const frameMat = mat(0x2a2233, { rough: 0.6 });
+    const arts = [
+      { z: -1.2, y: 3.7, w: 1.0, h: 1.3, art: 0x3a5a7a },
+      { z: 0.7, y: 3.3, w: 1.2, h: 0.9, art: 0xb5734a },
+    ];
+    arts.forEach((a) => {
+      const frame = new T.Mesh(new T.BoxGeometry(0.06, a.h, a.w), frameMat);
+      frame.position.set(-4.84, a.y, a.z); frame.receiveShadow = true; g.add(frame);
+      const face = new T.Mesh(new T.BoxGeometry(0.02, a.h - 0.14, a.w - 0.14),
+        mat(a.art, { rough: 0.8, emissive: a.art, emi: 0.1 }));
+      face.position.set(-4.8, a.y, a.z); g.add(face);
+    });
+    scene.add(g);
+    refs.wallArt = g;
   }
 
   // 城市:稀疏 + 远离房间的一圈天际线(数量/距离/高度可重建)
@@ -647,6 +774,14 @@ window.Scene3D = (function () {
       steam.geometry.attributes.position.needsUpdate = true;
     }
 
+    // 串灯轻微闪烁(暖味呼吸感;幅度很小)
+    if (refs.fairy) {
+      for (let i = 0; i < refs.fairy.length; i++) {
+        const fl = refs.fairy[i];
+        fl.mat.emissiveIntensity = fl.base * (0.82 + 0.18 * Math.sin(t * 1.5 + fl.phase));
+      }
+    }
+
     // 极缓慢镜头微动(非鼠标);reduced-motion 或编辑模式(drift 关)下不接管相机
     if (driftEnabled && !reduce) {
       camera.position.set(
@@ -752,6 +887,7 @@ window.Scene3D = (function () {
       if (refs.cityGroup) { scene.remove(refs.cityGroup); disposeObj(refs.cityGroup); }
       refs.cityGroup = buildCity(PARAMS.city);
       scene.add(refs.cityGroup);
+      applyBackdrop();   // 新城市组默认在 y=0,重新下移到 horizonY,否则地平线视觉上被置零
     } else if (part === "quilt") {
       if (refs.quiltMesh && refs.bedGroup) { refs.bedGroup.remove(refs.quiltMesh); disposeObj(refs.quiltMesh); }
       refs.quiltMesh = buildQuilt(PARAMS.quilt);

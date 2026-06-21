@@ -66,6 +66,9 @@ body{
   font-size:18px; line-height:1; transition:.2s; }
 .iconbtn:hover{ background:rgba(255,255,255,.16); }
 .iconbtn.off{ opacity:.4; }
+/* 曲目切换:文字胶囊按钮(覆盖圆形 iconbtn) */
+.trackbtn{ width:auto; height:34px; border-radius:17px; padding:0 12px;
+  font-size:13px; white-space:nowrap; color:var(--accent); }
 .sep{ width:1px; height:24px; background:var(--glass-brd); }
 .slider{ -webkit-appearance:none; appearance:none; width:96px; height:4px; border-radius:4px;
   background:rgba(255,255,255,.2); outline:none; }
