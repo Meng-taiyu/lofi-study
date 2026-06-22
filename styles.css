@@ -110,11 +110,15 @@ body{
   .quote{ display:none; }
   .timer-btns{ gap:6px; } .btn{ padding:8px 12px; font-size:13px; }
   .timer-presets{ margin-top:8px; }
-  /* 底部控制栏:避开底部手势条,限宽不超出屏幕 */
-  .dock{ bottom:calc(16px + env(safe-area-inset-bottom)); gap:8px; padding:9px 12px;
-    max-width:calc(100vw - 24px); }
-  .slider{ width:54px; }
+  /* 底部控制栏:避开底部手势条,限宽不超出屏幕,紧凑按钮布局 */
+  .dock{ bottom:calc(16px + env(safe-area-inset-bottom)); gap:6px; padding:7px 10px;
+    max-width:calc(100vw - 20px); justify-content:center; }
+  .iconbtn{ width:36px; height:36px; font-size:16px; }
+  .trackbtn{ width:auto; height:30px; border-radius:15px; padding:0 10px; font-size:12px; }
+  .slider{ width:48px; }
+  .sep{ width:1px; height:20px; }
   .nowplaying{ display:none; }
+  .ver{ bottom:calc(4px + env(safe-area-inset-bottom)); right:8px; }
   .gate-title{ font-size:34px; } .gate-sub{ font-size:13px; padding:0 16px; }
   .enter{ padding:14px 42px; }   /* 入口按钮保持大点击区,方便手指点 */
 }
@@ -126,9 +130,11 @@ body{
   .timer-mode{ font-size:11.5px; }
   .timer-btns{ flex-wrap:wrap; gap:6px; } .btn{ padding:7px 11px; font-size:12.5px; }
   .chip{ padding:6px 9px; font-size:11px; }
-  .iconbtn{ width:38px; height:38px; font-size:17px; }
-  .dock{ gap:6px; padding:8px 10px; }
-  .slider{ width:44px; }
+  .iconbtn{ width:34px; height:34px; font-size:15px; }
+  .dock{ gap:4px; padding:6px 8px; bottom:calc(14px + env(safe-area-inset-bottom)); }
+  .trackbtn{ width:auto; height:28px; border-radius:14px; padding:0 8px; font-size:11px; }
+  .slider{ width:40px; }
+  .sep{ width:1px; height:18px; }
 }
 @media (prefers-reduced-motion:reduce){
   .grain{ animation:none; }
