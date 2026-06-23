@@ -58,7 +58,7 @@ window.Scene3D = (function () {
   };
 
   /* —— 台灯 group 原点设在底座中心;地毯/月亮基准尺寸用于换算 scale —— */
-  const LAMP_BASE_Y = 2.12;
+  const LAMP_BASE_Y = 2.14;
   const RUG_BASE_W = 4.6, RUG_BASE_D = 3.4;
   const MOON_BASE_R = 1.4;
 
@@ -642,7 +642,7 @@ window.Scene3D = (function () {
       }
     }
     g.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    g.position.set(-4.6, 0, 2.7);
+    g.position.set(-4.6, 0, 3.7);
     scene.add(g);
     refs.bookshelf = g;
   }

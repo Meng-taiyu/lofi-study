@@ -36,6 +36,9 @@ body{
 .topright{ top:26px; right:26px; text-align:center; min-width:208px; }
 .dock{ bottom:26px; left:50%; transform:translateX(-50%);
   display:flex; align-items:center; gap:12px; padding:12px 18px; border-radius:999px; }
+/* 次要按钮组:宽屏直接平铺,“更多”按钮与其分隔线隐藏 */
+.dock-rest{ display:flex; align-items:center; gap:12px; }
+.dock-more-btn,.dock-sep-more{ display:none; }
 
 .clock{ font-size:40px; font-weight:600; letter-spacing:1px; line-height:1; }
 .muted{ color:var(--muted); font-size:13px; margin-top:4px; }
@@ -117,6 +120,19 @@ body{
   .trackbtn{ width:auto; height:30px; border-radius:15px; padding:0 10px; font-size:12px; }
   .slider{ width:48px; }
   .sep{ width:1px; height:20px; }
+  /* 窄屏:次要按钮收进“更多”⋯,点击向上弹出竖排小面板 */
+  .dock-more-btn{ display:inline-flex; align-items:center; justify-content:center; }
+  .dock-sep-more{ display:inline-block; }
+  .dock-rest{ position:absolute; bottom:calc(100% + 10px); right:0;
+    flex-direction:column; gap:10px; padding:12px 10px; border-radius:18px;
+    background:var(--glass); border:1px solid var(--glass-brd);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 10px 40px rgba(0,0,0,.35);
+    opacity:0; transform:translateY(8px) scale(.96); transform-origin:bottom right;
+    pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
+  .dock-rest .sep{ width:24px; height:1px; }
+  .dock.more-open .dock-rest{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+  .dock.more-open .dock-more-btn{ color:var(--accent); border-color:var(--accent); }
   .nowplaying{ display:none; }
   .ver{ bottom:calc(4px + env(safe-area-inset-bottom)); right:8px; }
   .gate-title{ font-size:34px; } .gate-sub{ font-size:13px; padding:0 16px; }

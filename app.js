@@ -333,10 +333,11 @@ const TRACKS = [
     drums:  { kick: [0, 8], snare: [4, 12], kickLevel: 0.22, snareLevel: 0.05 },
     revMul: 1,
   },
-  { // 1 · 暖阳午后:明亮大调、稍快、慵懒
+  { // 1 · 暖阳午后:明亮大调、稍快、慵懒(I–vi–ii–V,加 9 音展开排列)
     name: "暖阳午后", tempo: 78, swing: 0.16,
-    prog: [[48,52,55,59],[45,48,52,55],[53,57,60,64],[55,59,62,65]], // Cmaj7–Am7–Fmaj7–G7
-    scale: [67,69,72,74,76,79], // C 大调五声
+    // Cmaj9 – Am9 – Dm9 – G9:根音低八度 + 3/7/9 散在上方,跨两个八度留白
+    prog: [[48,64,67,71,74],[45,60,64,67,71],[50,65,69,72,76],[43,62,65,69,72]],
+    scale: [67,69,72,74,76,79,81], // C 大调五声 + 9 音(D)
     pad:    { type: "triangle", level: 0.05, detune: 0.05 },
     bass:   { level: 0.20, cut: 360 },
     melody: { type: "triangle", level: 0.06, onProb: 0.50, offProb: 0.16, octChance: 0.20 },
@@ -345,8 +346,9 @@ const TRACKS = [
   },
   { // 2 · 星海:慢、梦幻、高把位铺底、重混响、极简鼓
     name: "星海", tempo: 60, swing: 0.20,
-    prog: [[57,60,64,67],[53,57,60,64],[55,59,62,65],[52,55,59,62]], // Am7–Fmaj7–G7–Em7(高八度)
-    scale: [69,72,76,79,81], // 稀疏高音
+    // Amaj9 – F#m9 – Bm9 – E9:高把位散开排列,根音低八度 + 9 音点缀,空灵留白
+    prog: [[45,61,64,68,71],[42,57,61,64,68],[47,62,66,69,73],[40,59,63,66,71]],
+    scale: [69,73,76,78,81,85], // A 大调五声高把位(含 9 音 B)
     pad:    { type: "sine", level: 0.055, detune: 0.05 },
     bass:   { level: 0.18, cut: 260 },
     melody: { type: "sine", level: 0.06, onProb: 0.30, offProb: 0.06, octChance: 0.15 },
@@ -355,8 +357,9 @@ const TRACKS = [
   },
   { // 3 · 雪夜:超柔、无鼓、厚 pad、温暖
     name: "雪夜", tempo: 68, swing: 0.14,
-    prog: [[53,57,60,64],[48,52,55,59],[50,53,57,60],[45,48,52,55]], // Fmaj7–Cmaj7–Dm7–Am7
-    scale: [69,72,74,76,79], // A 小调五声(中音区)
+    // Fmaj9 – Em9 – Dm9 – Cmaj9:厚 pad 下行级进,9 音让和声温暖不闷
+    prog: [[41,60,64,67,72],[40,59,62,66,71],[38,57,60,65,69],[36,55,59,64,67]],
+    scale: [65,67,69,72,74,77], // F 调中音区五声(含 9 音 G)
     pad:    { type: "triangle", level: 0.06, detune: 0.08 },
     bass:   { level: 0.20, cut: 300 },
     melody: { type: "sine", level: 0.055, onProb: 0.35, offProb: 0.05, octChance: 0.10 },
@@ -704,6 +707,21 @@ function bindUI() {
   $("fsBtn").addEventListener("click", () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
+  });
+
+  // “更多”按钮(窄屏):向上弹出/收起次要按钮面板
+  const dock = document.querySelector(".dock");
+  const moreBtn = $("moreBtn");
+  const closeMore = () => { dock.classList.remove("more-open"); moreBtn.setAttribute("aria-expanded", "false"); };
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = dock.classList.toggle("more-open");
+    moreBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  // 点面板内按钮后自动收起;点面板外区域也收起
+  $("dockRest").addEventListener("click", (e) => { if (e.target.closest(".iconbtn")) closeMore(); });
+  document.addEventListener("click", (e) => {
+    if (dock.classList.contains("more-open") && !e.target.closest(".dock")) closeMore();
   });
 
   // 空格 = 番茄钟开始/暂停(进入后才生效)
