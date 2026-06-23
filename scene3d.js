@@ -23,16 +23,16 @@ window.Scene3D = (function () {
 
   /* —— 可调参数(editor 实时改这里 + 调 apply/rebuild;也是导出的对象) —— */
   const PARAMS = {
-    camera: { posX: 14.193, posY: 9.103, posZ: 9.852, targetX: 0.6, targetY: 2.3, targetZ: -0.2, frustum: 11.3, zoom: 1.2, drift: true },
+    camera: { posX: 15.665, posY: 6.665, posZ: 9.088, targetX: 0.358, targetY: 2.429, targetZ: 0.154, frustum: 11.3, zoom: 1.2, drift: true },
     lighting: {
       hemiInt: 0.92, ambInt: 0.43,
       moonInt: 1.92, moonColor: 0x9fc0ff, moonX: 2.2, moonY: 10.8, moonZ: -12.9,
       screenInt: 2, exposure: 0.78,
       fogColor: 0x16223f, fogDensity: 0.021,
     },
-    lamp: { x: -1.92, y: 0.02, z: -4.16, scale: 1.11, lightInt: 5.85, lightColor: 0xffb070, bulbEmi: 3.1, shadeColor: 0xff9d57 },
+    lamp: { x: -1.92, y: 0.02, z: -4.16, scale: 1.11, lightInt: 6, lightColor: 0xf5680a, bulbEmi: 3.1, shadeColor: 0xf56600 },
     city: { count: 80, rInner: 18, rOuter: 35, hMin: 2.5, hMax: 12.7, wMin: 1.4, wMax: 2.7, winChance: 1 },
-    bed: { x: -3.4, z: 1.95, scale: 1.12, frameColor: 0x39303f, mattressColor: 0x66739c },
+    bed: { x: -3.05, z: 1.4, scale: 1.12, frameColor: 0x39303f, mattressColor: 0x66739c },
     quilt: { color: 0xb87a64, puff: 1.34, drape: 0.62, segments: 6, skew: 0.68 },
     person: { x: 0.15, z: -1.85, scale: 0.99, skinColor: 0xf2c9a0, bodyColor: 0x46512f, hairColor: 0x000000 },
     rug: { x: 0, z: -1.5, w: 8, d: 6.3, color: 0x5a3b3a },
