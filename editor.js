@@ -18,9 +18,11 @@
   if (!/[?&]edit(\b|=)/.test(location.search)) return;
 
   // —— 手机/触屏:可视化编辑器依赖鼠标拖拽,不适用;给提示后退出 ——
+  // 例外:带 &force(如 ?edit&force)强制在手机开启 —— 面板/滑杆可用,三维拖拽手柄触屏可能不灵
+  const forceMobile = /[?&]force(\b|=)/.test(location.search);
   const smallTouch = window.matchMedia("(max-width:760px)").matches ||
     (("ontouchstart" in window) && !window.matchMedia("(pointer:fine)").matches);
-  if (smallTouch) {
+  if (smallTouch && !forceMobile) {
     const tip = document.createElement("div");
     tip.textContent = "🖥 可视化编辑器请在电脑上打开（?edit）";
     tip.style.cssText = "position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));" +
@@ -73,8 +75,15 @@
       ["drape", "垂边", 0, 3, 0.02], ["segments", "褶皱段数", 1, 8, 1], ["skew", "起伏", 0, 1, 0.01],
     ]},
     { group: "person", label: "人物", mode: "apply", fields: [
+      ["state", "状态", "select", [["study", "学习"], ["sleep", "睡觉"], ["idle", "发呆"]]],
       ["x", "位置X", -5, 3, 0.05], ["z", "位置Z", -5, 3, 0.05], ["scale", "大小", 0.4, 2.5, 0.01],
       ["bodyColor", "身体色", "color"], ["hairColor", "头发色", "color"],
+    ]},
+    { group: "bookshelf", label: "书架", mode: "apply", fields: [
+      ["x", "位置X", -6, 6, 0.05], ["z", "位置Z", -5, 4, 0.05], ["scale", "大小", 0.4, 2.5, 0.01],
+    ]},
+    { group: "floorLamp", label: "落地灯", mode: "apply", fields: [
+      ["x", "位置X", -6, 6, 0.05], ["z", "位置Z", -5, 4, 0.05], ["scale", "大小", 0.4, 2.5, 0.01],
     ]},
     { group: "rug", label: "地毯", mode: "apply", fields: [
       ["x", "位置X", -5, 3, 0.05], ["z", "位置Z", -5, 3, 0.05],

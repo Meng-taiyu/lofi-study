@@ -34,8 +34,10 @@ window.Scene3D = (function () {
     city: { count: 80, rInner: 18, rOuter: 35, hMin: 2.5, hMax: 12.7, wMin: 1.4, wMax: 2.7, winChance: 1 },
     bed: { x: -3.05, z: 1.4, scale: 1.12, frameColor: 0x39303f, mattressColor: 0x66739c },
     quilt: { color: 0xb87a64, puff: 1.34, drape: 0.62, segments: 6, skew: 0.68 },
-    person: { x: 0.15, z: -1.85, scale: 0.99, skinColor: 0xf2c9a0, bodyColor: 0x46512f, hairColor: 0x000000 },
+    person: { x: 0.15, z: -1.85, scale: 0.99, skinColor: 0xf2c9a0, bodyColor: 0x46512f, hairColor: 0x000000, state: "study" },
     rug: { x: 0, z: -1.5, w: 8, d: 6.3, color: 0x5a3b3a },
+    bookshelf: { x: -4.6, z: -1.2, scale: 1 },
+    floorLamp: { x: 5.5, z: 2.6, scale: 1 },
     moon: { x: 5, y: 11.5, z: -22, size: 1.4, emi: 1.3 },
     // 窗外地平线高度:房间在高楼,地平线/城市应远在地板之下。
     // horizonY = 天际线(城市基座/远地面/天空亮带)的世界 Y。房间地板在 y=0,墙高约 6,
@@ -81,6 +83,8 @@ window.Scene3D = (function () {
       flatShading: !!o.flat,
       emissive: o.emissive != null ? o.emissive : 0x000000,
       emissiveIntensity: o.emi != null ? o.emi : 1,
+      // 默认不吃雾:室内物件不被全局雾染白(雾只留给窗外远景,见 ground/city 显式 fog:true)
+      fog: o.fog != null ? o.fog : false,
     });
   }
   function box(w, h, d, color, o) {
@@ -222,8 +226,8 @@ window.Scene3D = (function () {
     );
     sky.renderOrder = -1;
     scene.add(sky);
-    // 远处地面:给背景下方铺色(远处融入雾与天际)
-    const ground = new T.Mesh(new T.PlaneGeometry(400, 400), mat(0x0c1226, { rough: 1 }));
+    // 远处地面:给背景下方铺色(远处融入雾与天际)—— 窗外远景,保留吃雾
+    const ground = new T.Mesh(new T.PlaneGeometry(400, 400), mat(0x0c1226, { rough: 1, fog: true }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.3, 0);
     ground.castShadow = false; ground.receiveShadow = false;
     scene.add(ground);
@@ -484,49 +488,98 @@ window.Scene3D = (function () {
     // 圆润小身子(卫衣)
     const body = new T.Mesh(new T.SphereGeometry(0.58, 24, 20), hoodie(0.95));
     body.position.set(0, 1.95, 0); body.scale.set(1.06, 1.16, 1.0); body.castShadow = true; g.add(body);
-    // 卫衣帽兜(垂在颈后)
+    // 卫衣帽兜(垂在颈后)—— 跟随身体
     const hood = new T.Mesh(new T.SphereGeometry(0.42, 20, 16), hoodie(0.95));
     hood.position.set(0, 2.46, 0.3); hood.scale.set(1.0, 0.72, 0.6); hood.castShadow = true; g.add(hood);
     // 卫衣口袋(身前)
     const pocket = new T.Mesh(new T.BoxGeometry(0.52, 0.3, 0.1), hoodie(0.9));
     pocket.position.set(0, 1.74, -0.52); pocket.castShadow = true; g.add(pocket);
 
+    // —— 头部总成挂到颈部枢轴(headPivot),整体点头 / 趴睡都绕颈旋转 ——
+    const headPivot = new T.Group();
+    headPivot.position.set(0, 2.5, 0);
+    g.add(headPivot);
+    const HP = (obj, x, y, z) => { obj.position.set(x, y - 2.5, z); obj.castShadow = true; headPivot.add(obj); return obj; };
+
     // 头(肤色)
     const head = new T.Mesh(new T.SphereGeometry(0.46, 28, 28), skin(0.85));
-    head.position.set(0, 2.86, -0.06); head.castShadow = true; g.add(head);
+    HP(head, 0, 2.86, -0.06);
     // 男生中等长度头发:头顶主体 + 颈后垂发 + 前额刘海
     const hairTop = new T.Mesh(new T.SphereGeometry(0.5, 24, 24), hairMat());
-    hairTop.position.set(0, 2.97, 0.02); hairTop.scale.set(1.08, 1.06, 1.06); hairTop.castShadow = true; g.add(hairTop);
+    HP(hairTop, 0, 2.97, 0.02); hairTop.scale.set(1.08, 1.06, 1.06);
     const hairBack = new T.Mesh(new T.SphereGeometry(0.34, 20, 20), hairMat());
-    hairBack.position.set(0, 2.66, 0.26); hairBack.scale.set(1.12, 1.05, 0.7); hairBack.castShadow = true; g.add(hairBack);
+    HP(hairBack, 0, 2.66, 0.26); hairBack.scale.set(1.12, 1.05, 0.7);
     const fringe = new T.Mesh(new T.SphereGeometry(0.3, 20, 20), hairMat());
-    fringe.position.set(0, 3.0, -0.36); fringe.scale.set(1.35, 0.6, 0.7); fringe.castShadow = true; g.add(fringe);
+    HP(fringe, 0, 3.0, -0.36); fringe.scale.set(1.35, 0.6, 0.7);
 
-    // 耳机:头梁 + 两只耳罩
+    // 耳机:头梁 + 两只耳罩(随头一起动)
     const band = new T.Mesh(new T.TorusGeometry(0.53, 0.06, 10, 24, Math.PI), mat(COL.phones, { rough: 0.5 }));
-    band.position.set(0, 2.9, -0.02); g.add(band);
+    HP(band, 0, 2.9, -0.02);
     [-0.53, 0.53].forEach((x) => {
       const cup = new T.Mesh(new T.SphereGeometry(0.14, 18, 18), mat(COL.phones, { rough: 0.5 }));
-      cup.position.set(x, 2.84, -0.04); cup.scale.set(0.82, 1, 1); g.add(cup);
+      HP(cup, x, 2.84, -0.04); cup.scale.set(0.82, 1, 1);
     });
 
-    // 手臂(卫衣袖子)短前臂平搭在桌面(桌面世界 y≈2.09)+ 手(肤色)写字
+    // —— 左臂(卫衣袖)+ 左手:前臂平搭桌面 ——
     const lArm = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 0.64, 12), hoodie(0.95));
     lArm.position.set(-0.34, 2.16, -0.62); lArm.rotation.x = Math.PI / 2; lArm.castShadow = true; g.add(lArm);
+    const lHand = new T.Mesh(new T.SphereGeometry(0.12, 16, 14), skin(0.9));
+    lHand.position.set(-0.34, 2.12, -0.98); lHand.scale.set(1.1, 0.6, 1.3); lHand.castShadow = true; g.add(lHand);
+
+    // —— 右臂 + 右手 + 笔:整体成组,便于「写字」循环动画 ——
+    const rArmGroup = new T.Group(); g.add(rArmGroup);
     const rArm = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 0.64, 12), hoodie(0.95));
-    rArm.position.set(0.3, 2.16, -0.62); rArm.rotation.set(Math.PI / 2, 0.5, 0); rArm.castShadow = true; g.add(rArm);
-    const lHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
-    lHand.position.set(-0.34, 2.18, -0.96); lHand.castShadow = true; g.add(lHand);
-    const rHand = new T.Mesh(new T.SphereGeometry(0.12, 14, 14), skin(0.9));
-    rHand.position.set(0.12, 2.18, -0.92); rHand.castShadow = true; g.add(rHand);
+    rArm.position.set(0.32, 2.16, -0.62); rArm.rotation.set(Math.PI / 2, -0.32, 0); rArm.castShadow = true; rArmGroup.add(rArm);
+    const rHand = new T.Mesh(new T.SphereGeometry(0.12, 16, 14), skin(0.9));
+    rHand.position.set(0.16, 2.12, -0.96); rHand.scale.set(1.1, 0.6, 1.3); rHand.castShadow = true; rArmGroup.add(rHand);
     // 笔(右手握,斜尖向桌面)
-    const pen = new T.Mesh(new T.CylinderGeometry(0.02, 0.02, 0.3, 8), mat(0xf2c14e, { rough: 0.4 }));
-    pen.position.set(0.08, 2.22, -1.0); pen.rotation.set(0.9, 0.2, 0.5); g.add(pen);
+    const pen = new T.Mesh(new T.CylinderGeometry(0.018, 0.018, 0.32, 8), mat(0xf2c14e, { rough: 0.4 }));
+    pen.position.set(0.12, 2.2, -1.06); pen.rotation.set(0.95, 0.2, 0.5); rArmGroup.add(pen);
 
     g.position.set(p.x, 0, p.z);
     g.scale.setScalar(p.scale);
     scene.add(g);
     refs.personGroup = g; refs.personSkinMats = skinMats; refs.personHoodieMats = hoodieMats; refs.personHairMats = hairMats;
+    refs.personBody = body; refs.personHeadPivot = headPivot; refs.personRArm = rArmGroup;
+    refs.personBase = { bodyScaleY: body.scale.y, headPosY: headPivot.position.y };
+    applyPersonState();
+  }
+
+  // —— 人物状态:学习(study)/ 睡觉(sleep)/ 发呆(idle) —— 设基础姿态,逐帧动画由 tickPerson 叠加
+  function applyPersonState() {
+    const st = (PARAMS.person.state || "study");
+    refs.personState = st;
+    const base = refs.personBase;
+    if (!refs.personHeadPivot || !base) return;
+    const hp = refs.personHeadPivot, body = refs.personBody, rArm = refs.personRArm;
+    if (st === "sleep") {
+      // 趴睡:头深垂、身子前倾压低、手臂收回
+      hp.rotation.set(-1.15, 0, 0); body.scale.y = base.bodyScaleY * 0.9; body.rotation.x = 0.5; rArm.rotation.set(0, 0, 0);
+    } else if (st === "idle") {
+      // 发呆:微抬头、放松
+      hp.rotation.set(0.06, 0, 0); body.scale.y = base.bodyScaleY; body.rotation.x = 0; rArm.rotation.set(0, 0, 0);
+    } else {
+      // 学习:低头看书、身体微前倾、右臂准备写字
+      hp.rotation.set(-0.28, 0, 0); body.scale.y = base.bodyScaleY; body.rotation.x = 0.12; rArm.rotation.set(0, 0, 0);
+    }
+  }
+
+  // 逐帧循环动画:依状态叠加正弦微动(写字 / 呼吸 / 点头)
+  function tickPerson(t) {
+    if (!refs.personHeadPivot || !refs.personState) return;
+    const hp = refs.personHeadPivot, body = refs.personBody, rArm = refs.personRArm, b = refs.personBase;
+    const st = refs.personState;
+    if (st === "sleep") {
+      // 缓慢呼吸起伏
+      body.scale.y = b.bodyScaleY * (0.9 + Math.sin(t * 0.9) * 0.025);
+    } else if (st === "idle") {
+      // 轻晃 + 偶尔点头
+      hp.rotation.x = 0.06 + Math.sin(t * 1.6) * 0.12; body.rotation.z = Math.sin(t * 0.8) * 0.04;
+    } else {
+      // 写字:右臂小幅摆动 + 头随写字轻动 + 呼吸
+      rArm.rotation.z = Math.sin(t * 6.0) * 0.16; rArm.rotation.x = Math.sin(t * 6.0 + 1.0) * 0.06;
+      hp.rotation.x = -0.28 + Math.sin(t * 0.7) * 0.05; body.scale.y = b.bodyScaleY * (1 + Math.sin(t * 1.1) * 0.012);
+    }
   }
 
   /* ============================== 窗外:月亮 / 城市 ============================== */
@@ -611,7 +664,9 @@ window.Scene3D = (function () {
     light.shadow.camera.near = 0.2; light.shadow.camera.far = 9;
     light.shadow.bias = -0.0015;
     lg.add(light);
-    lg.position.set(cx + 0.7, 0, cz - 0.6);
+    const flp = PARAMS.floorLamp;
+    lg.position.set(flp.x, 0, flp.z);
+    lg.scale.setScalar(flp.scale);
     scene.add(lg);
     refs.floorLamp = lg;
   }
@@ -642,7 +697,9 @@ window.Scene3D = (function () {
       }
     }
     g.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    g.position.set(-4.6, 0, -1.2);
+    const bp = PARAMS.bookshelf;
+    g.position.set(bp.x, 0, bp.z);
+    g.scale.setScalar(bp.scale);
     scene.add(g);
     refs.bookshelf = g;
   }
@@ -675,7 +732,7 @@ window.Scene3D = (function () {
       const r = R(p.rInner, p.rOuter);
       const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
       const h = R(p.hMin, p.hMax), w = R(p.wMin, p.wMax), dp = R(p.wMin, p.wMax);
-      const b = box(w, h, dp, R(0, 1) > 0.5 ? 0x0e1430 : 0x121a38, { cast: false, recv: false, rough: 1 });
+      const b = box(w, h, dp, R(0, 1) > 0.5 ? 0x0e1430 : 0x121a38, { cast: false, recv: false, rough: 1, fog: true });
       b.position.set(x, h / 2, z); city.add(b);
       // 朝向房间的一面点几盏窗灯
       const dir = new T.Vector3(-x, 0, -z).normalize();
@@ -683,7 +740,7 @@ window.Scene3D = (function () {
         if (Math.random() < p.winChance) {
           const warm = Math.random() > 0.5;
           const win = new T.Mesh(new T.PlaneGeometry(0.16, 0.24),
-            new T.MeshBasicMaterial({ color: warm ? 0xffcf87 : 0x6e86b8, transparent: true, opacity: R(0.4, 0.85) }));
+            new T.MeshBasicMaterial({ color: warm ? 0xffcf87 : 0x6e86b8, transparent: true, opacity: R(0.4, 0.85), fog: true }));
           win.position.set(x + dir.x * (dp / 2 + 0.02) + R(-w / 4, w / 4), wy, z + dir.z * (dp / 2 + 0.02));
           win.lookAt(0, wy, 0);
           city.add(win);
@@ -792,6 +849,9 @@ window.Scene3D = (function () {
       camera.lookAt(camTarget);
     }
 
+    // 人物状态循环动画(写字 / 呼吸 / 点头)
+    tickPerson(t);
+
     // 外部帧回调(editor 的 OrbitControls.update 等)
     for (let i = 0; i < frameCallbacks.length; i++) frameCallbacks[i](dt, t);
 
@@ -860,6 +920,19 @@ window.Scene3D = (function () {
         refs.personSkinMats.forEach((m) => m.color.setHex(p.skinColor));
         refs.personHoodieMats.forEach((m) => m.color.setHex(p.bodyColor));
         refs.personHairMats.forEach((m) => m.color.setHex(p.hairColor));
+        applyPersonState();
+        break;
+      }
+      case "bookshelf": {
+        const p = PARAMS.bookshelf;
+        refs.bookshelf.position.set(p.x, 0, p.z);
+        refs.bookshelf.scale.setScalar(p.scale);
+        break;
+      }
+      case "floorLamp": {
+        const p = PARAMS.floorLamp;
+        refs.floorLamp.position.set(p.x, 0, p.z);
+        refs.floorLamp.scale.setScalar(p.scale);
         break;
       }
       case "rug": {
