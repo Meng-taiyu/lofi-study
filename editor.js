@@ -116,20 +116,46 @@
   }
   ready(init);
 
-  function init() {
-    if (!window.THREE || !window.Scene3D) { console.warn("[editor] THREE / Scene3D 缺失"); return; }
-    if (!THREE.OrbitControls || !THREE.TransformControls) { console.warn("[editor] 控制器脚本未加载"); return; }
+  // 屏幕可见的错误提示(手机看不到 console 时用)
+  function edToast(msg) {
+    let t = document.getElementById("ed-toast");
+    if (!t) {
+      t = document.createElement("div"); t.id = "ed-toast";
+      t.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:40;" +
+        "max-width:90vw;text-align:center;padding:8px 14px;border-radius:10px;" +
+        "background:rgba(120,20,20,.92);color:#fff;font:12px/1.45 sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);";
+      (document.body || document.documentElement).appendChild(t);
+    }
+    t.textContent = "[编辑器] " + msg;
+  }
+
+  function init(tries) {
+    tries = tries || 0;
+    if (!window.THREE || !window.Scene3D) {
+      if (tries < 30) return setTimeout(() => init(tries + 1), 150);
+      return edToast("THREE / Scene3D 未加载(检查脚本/网络)");
+    }
+    if (!THREE.OrbitControls || !THREE.TransformControls) {
+      if (tries < 30) return setTimeout(() => init(tries + 1), 150);
+      return edToast("控制器脚本(OrbitControls/TransformControls)未加载");
+    }
     const three = Scene3D.three();
-    if (!three || !three.camera) { console.warn("[editor] 场景尚未初始化"); return; }
+    if (!three || !three.camera) {
+      if (tries < 30) return setTimeout(() => init(tries + 1), 150); // 场景还没建完,稍后重试
+      return edToast("场景未初始化(Scene3D.three() 为空)");
+    }
 
     // 编辑模式跳过进入遮罩(z20 的 gate 会挡住编辑面板);音频保持未启动,专注调视觉
     const gate = document.getElementById("gate");
     if (gate) gate.classList.add("gone");
 
-    setupControls(three);
-    buildPanel();
-
-    if (loadLS()) { applyAll(); syncAll(); }
+    try {
+      setupControls(three);
+      buildPanel();
+      if (loadLS()) { applyAll(); syncAll(); }
+    } catch (e) {
+      edToast("初始化出错:" + (e && e.message ? e.message : e));
+    }
   }
 
   /* ============================== 控制器 ============================== */
