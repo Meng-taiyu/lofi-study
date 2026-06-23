@@ -17,22 +17,7 @@
   // —— 仅 ?edit 激活 ——
   if (!/[?&]edit(\b|=)/.test(location.search)) return;
 
-  // —— 手机/触屏:可视化编辑器依赖鼠标拖拽,不适用;给提示后退出 ——
-  // 例外:带 &force(如 ?edit&force)强制在手机开启 —— 面板/滑杆可用,三维拖拽手柄触屏可能不灵
-  const forceMobile = /[?&]force(\b|=)/.test(location.search);
-  const smallTouch = window.matchMedia("(max-width:760px)").matches ||
-    (("ontouchstart" in window) && !window.matchMedia("(pointer:fine)").matches);
-  if (smallTouch && !forceMobile) {
-    const tip = document.createElement("div");
-    tip.textContent = "🖥 可视化编辑器请在电脑上打开（?edit）";
-    tip.style.cssText = "position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));" +
-      "transform:translateX(-50%);z-index:30;max-width:88vw;text-align:center;padding:10px 16px;" +
-      "border-radius:999px;background:rgba(28,16,34,.85);color:#fff3e2;font:13px/1.4 sans-serif;" +
-      "-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,210,160,.2);";
-    if (document.body) document.body.appendChild(tip);
-    else document.addEventListener("DOMContentLoaded", () => document.body.appendChild(tip));
-    return;
-  }
+  // 注:不再拦截手机/触屏 —— 手机也能直接 ?edit 打开面板(滑杆/下拉可用;三维拖拽手柄触屏可能不灵)
 
   // 与 scene3d.js 对应的换算基准(拖物体写回 PARAMS 时用)
   const LAMP_BASE_Y = 2.12, MOON_BASE_R = 1.4, RUG_BASE_W = 4.6, RUG_BASE_D = 3.4;
