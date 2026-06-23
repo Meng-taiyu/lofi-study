@@ -23,7 +23,7 @@ window.Scene3D = (function () {
 
   /* —— 可调参数(editor 实时改这里 + 调 apply/rebuild;也是导出的对象) —— */
   const PARAMS = {
-    camera: { posX: 10.385, posY: 14.737, posZ: 11.152, targetX: -0.76, targetY: 3.42, targetZ: 2.219, frustum: 10.4, zoom: 3.012, drift: true },
+    camera: { posX: 17.524, posY: 8.643, posZ: 4.085, targetX: 0.859, targetY: 3.827, targetZ: -1.495, frustum: 9.5, zoom: 1.85, drift: true },
     lighting: {
       hemiInt: 0.38, ambInt: 0.33,
       moonInt: 0.61, moonColor: 0x9fc0ff, moonX: 2.2, moonY: 10.8, moonZ: -12.9,
