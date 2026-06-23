@@ -23,26 +23,26 @@ window.Scene3D = (function () {
 
   /* —— 可调参数(editor 实时改这里 + 调 apply/rebuild;也是导出的对象) —— */
   const PARAMS = {
-    camera: { posX: 15.665, posY: 6.665, posZ: 9.088, targetX: 0.358, targetY: 2.429, targetZ: 0.154, frustum: 11.3, zoom: 1.2, drift: true },
+    camera: { posX: 10.385, posY: 14.737, posZ: 11.152, targetX: -0.76, targetY: 3.42, targetZ: 2.219, frustum: 10.4, zoom: 3.012, drift: true },
     lighting: {
-      hemiInt: 0.92, ambInt: 0.43,
-      moonInt: 1.92, moonColor: 0x9fc0ff, moonX: 2.2, moonY: 10.8, moonZ: -12.9,
+      hemiInt: 0.38, ambInt: 0.33,
+      moonInt: 0.61, moonColor: 0x9fc0ff, moonX: 2.2, moonY: 10.8, moonZ: -12.9,
       screenInt: 2, exposure: 0.78,
-      fogColor: 0x16223f, fogDensity: 0.021,
+      fogColor: 0x162236, fogDensity: 0.024,
     },
-    lamp: { x: -1.92, y: 0.02, z: -4.16, scale: 1.11, lightInt: 6, lightColor: 0xf5680a, bulbEmi: 3.1, shadeColor: 0xf56600 },
-    city: { count: 80, rInner: 18, rOuter: 35, hMin: 2.5, hMax: 12.7, wMin: 1.4, wMax: 2.7, winChance: 1 },
-    bed: { x: -3.05, z: 1.4, scale: 1.12, frameColor: 0x39303f, mattressColor: 0x66739c },
+    lamp: { x: -1.92, y: 0.02, z: -4.16, scale: 1.2, lightInt: 6, lightColor: 0xda5100, bulbEmi: 3.1, shadeColor: 0xf56600 },
+    city: { count: 80, rInner: 25, rOuter: 35, hMin: 3.3, hMax: 12.7, wMin: 2, wMax: 2.7, winChance: 1 },
+    bed: { x: -3.5, z: 1.15, scale: 1.12, frameColor: 0x39303f, mattressColor: 0x66739c },
     quilt: { color: 0xb87a64, puff: 1.34, drape: 0.62, segments: 6, skew: 0.68 },
     person: { x: 0.15, z: -1.85, scale: 0.99, skinColor: 0xf2c9a0, bodyColor: 0x46512f, hairColor: 0x000000, state: "study" },
     rug: { x: 0, z: -1.5, w: 8, d: 6.3, color: 0x5a3b3a },
-    bookshelf: { x: -4.6, z: -1.2, scale: 1 },
-    floorLamp: { x: 5.5, z: 2.6, scale: 1 },
+    bookshelf: { x: -3.55, z: 4, scale: 1.31 },
+    floorLamp: { x: 5.5, z: 2.6, scale: 1.34 },
     moon: { x: 5, y: 11.5, z: -22, size: 1.4, emi: 1.3 },
     // 窗外地平线高度:房间在高楼,地平线/城市应远在地板之下。
-    // horizonY = 天际线(城市基座/远地面/天空亮带)的世界 Y。房间地板在 y=0,墙高约 6,
-    // 取 -22 ≈ 地板下约 3.7 个房间高度(可在编辑器"窗外/地平线"里实时调)。
-    backdrop: { horizonY: -9 },
+    // horizonY = 天际线(城市基座/远地面/天空亮带)的世界 Y。房间地板在 y=0,墙高约 6。
+    // 可在编辑器"窗外/地平线"里实时调。
+    backdrop: { horizonY: -11 },
   };
 
   /* —— 不暴露给编辑器的固定调色 —— */
