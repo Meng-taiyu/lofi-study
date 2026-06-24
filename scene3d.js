@@ -3,7 +3,10 @@
 /* =========================================================================
    夜间自习室 · scene3d.js
    Three.js 等距 3D 自习室(冷暖对比)
-   - OrthographicCamera 正交等距视角(固定,不跟鼠标;仅极缓慢自动微动)
+   - OrthographicCamera 正交等距视角。主场景可交互(camera-controls:左键
+     旋转 / 右键平移 / 滚轮缩放,带阻尼顺滑;方位/俯仰/缩放受限,看不到切角
+     房间的缺墙穿帮;空闲 ~8s 缓慢回正默认机位,reduced-motion 不自动回正)。
+     编辑模式(?edit)下主控制器跳过,相机让给 editor.js 自带的 OrbitControls。
    - L 形切角房间 + 后墙开窗,窗外夜空 / 月亮 / 城市 / 雨
    - 冷暖对比布光:冷色月光+环境光 / 暖色台灯点光源;PCF 软阴影
    - 家具摆件:书桌 椅子 台灯 笔电 书堆 马克杯 盆栽 地毯 戴耳机的人 小床
@@ -13,8 +16,9 @@
    apply()/rebuild()),并保存对象引用到 refs。不调用 apply 时,build 使用
    PARAMS 的默认值 —— 即原先写死的数值,所以非编辑模式渲染结果与之前一致。
 
-   挂到 window.Scene3D = { init, setRain, params, apply, rebuild,
-                           refs, three, setDrift, addFrameCallback }
+   挂到 window.Scene3D = { init, setRain, params, apply, rebuild, refs,
+                           three, setDrift, addFrameCallback,
+                           controls, resetView }
    ========================================================================= */
 
 window.Scene3D = (function () {
@@ -68,10 +72,21 @@ window.Scene3D = (function () {
   let rain = null, dust = null, steam = null;
   let running = false, reduce = false;
   let driftEnabled = PARAMS.camera.drift;
+  let controls = null;          // camera-controls 实例(主场景;?edit 下交给 editor 的 OrbitControls)
+  let lastInteract = 0;         // 最后一次相机交互的时间戳(秒,clock.elapsedTime),用于空闲回正
+  let returning = false;        // 是否正在执行空闲回正过渡
   const frameCallbacks = [];
   const refs = {};
   const camBase = new T.Vector3();
   const camTarget = new T.Vector3();
+
+  /* —— 主场景相机交互限制(切角 diorama:不能转到背面看缺墙) —— */
+  const IDLE_RETURN_SEC = 8;            // 松手后多久开始缓慢回正到默认机位
+  const AZIM_RANGE = Math.PI / 5;       // 方位角可摆动范围(默认 ±36°)
+  const POLAR_MIN = Math.PI * 0.27;     // ≈49° 不俯顶
+  const POLAR_MAX = Math.PI * 0.46;     // ≈83° 不穿地
+  const ZOOM_MIN = 1.2, ZOOM_MAX = 3.5; // 默认 zoom 1.85
+
 
   /* —— 材质/几何小工具 —— */
   function mat(color, o) {
@@ -128,6 +143,7 @@ window.Scene3D = (function () {
     refs.renderer = renderer; refs.scene = scene;
 
     setupCamera();
+    setupControls();
     setupLights();
     buildBackdrop();
     buildRoom();
@@ -164,6 +180,57 @@ window.Scene3D = (function () {
     camera.updateProjectionMatrix();
     refs.camera = camera;
   }
+
+  /* —— 主场景相机交互(camera-controls):左拖旋转 / 右拖平移 / 滚轮缩放,带阻尼 ——
+     ?edit 模式下不接管,把相机让给 editor 自带的 OrbitControls(避免两个库抢同一 canvas)。
+     切角 diorama:限制方位/俯仰/缩放,转不到背面看缺墙;空闲数秒缓慢回正到默认机位。 */
+  function setupControls() {
+    if (/[?&]edit(\b|=)/.test(location.search)) return; // 让给编辑器
+    const CC = window.CameraControls;
+    if (!CC) { console.warn("[Scene3D] camera-controls 未加载,主场景相机保持固定。"); return; }
+
+    CC.install({ THREE: {
+      Vector2: T.Vector2, Vector3: T.Vector3, Vector4: T.Vector4,
+      Quaternion: T.Quaternion, Matrix4: T.Matrix4, Spherical: T.Spherical,
+      Box3: T.Box3, Sphere: T.Sphere, Raycaster: T.Raycaster,
+    } });
+
+    controls = new CC(camera, renderer.domElement);
+    controls.setLookAt(camBase.x, camBase.y, camBase.z, camTarget.x, camTarget.y, camTarget.z, false);
+
+    // 旋转/缩放限制(防切角房间穿帮)
+    const az = controls.azimuthAngle;
+    controls.minAzimuthAngle = az - AZIM_RANGE;
+    controls.maxAzimuthAngle = az + AZIM_RANGE;
+    controls.minPolarAngle = POLAR_MIN;
+    controls.maxPolarAngle = POLAR_MAX;
+    controls.minZoom = ZOOM_MIN;
+    controls.maxZoom = ZOOM_MAX;
+    // 平移边界:相机目标限制在房间附近,避免把房间推出画面
+    controls.setBoundary(new T.Box3(new T.Vector3(-6, -2, -6), new T.Vector3(6, 8, 6)));
+    // 阻尼手感(v2:值越小越顺滑/惯性越久)
+    controls.dampingFactor = 0.05;
+    controls.draggingDampingFactor = 0.12;
+
+    // 交给既有渲染循环驱动,并关掉自动微动(控制器接管相机)
+    driftEnabled = false;
+    lastInteract = clock.elapsedTime;
+    controls.addEventListener("control", () => { lastInteract = clock.elapsedTime; returning = false; });
+    addFrameCallback(updateControls);
+    refs.controls = controls;
+  }
+
+  // 每帧:推进 camera-controls 阻尼;空闲超时则平滑回正到默认机位(reduced-motion 下不自动回正)
+  function updateControls(dt) {
+    if (!controls) return;
+    controls.update(dt);
+    if (reduce) return;
+    if (!returning && (clock.elapsedTime - lastInteract) > IDLE_RETURN_SEC) {
+      returning = true;
+      controls.setLookAt(camBase.x, camBase.y, camBase.z, camTarget.x, camTarget.y, camTarget.z, true);
+    }
+  }
+
 
   // 正交视锥自适应:横屏(a>=1)按高度适配;竖屏(a<1,手机)按宽度适配,
   // 否则窄高屏会把房间左右裁掉。两种情况都保证房间完整显示。
@@ -970,18 +1037,27 @@ window.Scene3D = (function () {
 
   function setDrift(on) {
     driftEnabled = !!on;
-    if (!driftEnabled && camera) { camera.position.copy(camBase); camera.lookAt(camTarget); }
+    if (!driftEnabled && camera && !controls) { camera.position.copy(camBase); camera.lookAt(camTarget); }
   }
   function addFrameCallback(fn) { if (typeof fn === "function") frameCallbacks.push(fn); }
 
   /* —— 供 app.js 调用:雨声开关联动窗外雨 —— */
   function setRain(on) { if (rain) rain.visible = !!on; }
 
+  // 平滑回到默认机位(供 UI「重置视角」按钮等调用)
+  function resetView() {
+    if (controls) {
+      returning = true;
+      controls.setLookAt(camBase.x, camBase.y, camBase.z, camTarget.x, camTarget.y, camTarget.z, true);
+    }
+  }
+
   return {
-    init, setRain, setDrift, addFrameCallback,
+    init, setRain, setDrift, addFrameCallback, resetView,
     apply, rebuild,
     params: PARAMS,
     refs: () => refs,
+    controls: () => controls,
     three: () => ({ scene, camera, renderer }),
   };
 })();

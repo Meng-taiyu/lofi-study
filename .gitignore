@@ -1,3 +1,6 @@
 .DS_Store
 node_modules/
 *.log
+
+# 克隆的参考工程与素材(my-room / Kenney 家具包,体积大,不入库)
+_reference/
