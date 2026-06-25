@@ -10,6 +10,10 @@
    - L 形切角房间 + 后墙开窗,窗外夜空 / 月亮 / 城市 / 雨
    - 冷暖对比布光:冷色月光+环境光 / 暖色台灯点光源;PCF 软阴影
    - 家具摆件:书桌 椅子 台灯 笔电 书堆 马克杯 盆栽 地毯 戴耳机的人 小床
+     · 书架/床/落地灯/盆栽来自 Kenney CC0 GLB(models/furniture/),经
+       loadFurnitureGLB() 异步换皮:自动适配体量、落地居中、开阴影、保留灯光
+       子物体(落地灯暖光池);加载失败(file:// 的 CORS)回退 primitive。
+     · 桌/椅/小人仍为 primitive(与桌面物件/人耦合,后续再换)。
    - 氛围:窗外雨(随雨声开关显隐)、灯光微尘、马克杯蒸汽
 
    所有视觉参数集中在 PARAMS(editor.js 通过 Scene3D.params 读写,改完调
@@ -115,6 +119,62 @@ window.Scene3D = (function () {
       if (c.geometry) c.geometry.dispose();
       if (c.material) [].concat(c.material).forEach((m) => m.dispose());
     });
+  }
+
+  /* —— Kenney 家具 GLB 装载(单例 loader;换皮而非新增;失败回退 primitive) ——
+     用法:在某个 build 函数把 primitive 拼好、定位好后,调
+       loadFurnitureGLB("models/furniture/x.glb", group)
+     成功后:量 primitive 当前包围盒高度 → 自动缩放 GLB 到同等体量,落地居中,
+     开阴影,移除 group 里的旧 primitive mesh(标了 userData.keep 的子物体——如
+     PointLight / 发光灯泡——保留),再把 GLB 加进同一 group。group 引用/位置/
+     缩放不变,故 editor 的 apply()/TransformControls 零改动。
+     失败(file:// 的 CORS / 404)时什么都不做,保留原 primitive。 */
+  let _gltfLoader = null;
+  function loadFurnitureGLB(url, group, opts) {
+    opts = opts || {};
+    if (!T.GLTFLoader) { console.warn("[Scene3D] GLTFLoader 未加载,保留 primitive:", url); return; }
+    if (!_gltfLoader) _gltfLoader = new T.GLTFLoader();
+    // 换皮前量出 primitive 的目标体量(只算要被替换的可见 mesh,跳过 keep 子物体)
+    const targetBox = new T.Box3();
+    group.children.forEach((c) => { if (!c.userData.keep) targetBox.expandByObject(c); });
+    const targetSize = new T.Vector3();
+    if (!targetBox.isEmpty()) targetBox.getSize(targetSize);
+
+    _gltfLoader.load(
+      url,
+      (gltf) => {
+        const model = gltf.scene;
+        // 量 GLB 原始包围盒
+        const gb = new T.Box3().setFromObject(model);
+        const gs = new T.Vector3(); gb.getSize(gs);
+        // 自动适配:用「最大维」对齐(而非固定高度)——既适合高物(书架/灯/盆栽),
+        // 也适合矮长物(床:按高度对齐会把长度撑爆)。无 primitive 时用 opts.targetH 兜底。
+        const targetMax = Math.max(targetSize.x, targetSize.y, targetSize.z);
+        const glbMax = Math.max(gs.x, gs.y, gs.z);
+        let s;
+        if (targetMax > 1e-3 && glbMax > 1e-3) s = targetMax / glbMax;
+        else s = (opts.targetH && gs.y > 1e-3) ? opts.targetH / gs.y : 1;
+        model.scale.setScalar(s);
+        // 落地:底面贴 group 原点 y=0,水平居中到 group 原点
+        const sb = new T.Box3().setFromObject(model);
+        const ctr = new T.Vector3(); sb.getCenter(ctr);
+        model.position.x -= ctr.x;
+        model.position.z -= ctr.z;
+        model.position.y -= sb.min.y;
+        if (opts.yOffset) model.position.y += opts.yOffset;
+        // 阴影
+        model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        // 移除旧 primitive 可见物(保留 keep 子物体:灯光/发光灯泡等)
+        group.children.slice().forEach((c) => {
+          if (c.userData.keep) return;
+          group.remove(c); disposeObj(c);
+        });
+        group.add(model);
+        if (typeof opts.onReady === "function") opts.onReady(model, group);
+      },
+      undefined,
+      (err) => { console.warn("[Scene3D] GLB 加载失败,保留 primitive(file:// 需用 server):", url, err && err.message || err); }
+    );
   }
 
   /* ============================== 初始化 ============================== */
@@ -466,6 +526,8 @@ window.Scene3D = (function () {
     scene.add(g);
     refs.bedGroup = g; refs.quiltMesh = quilt;
     refs.bedFrameMats = [frameMat]; refs.bedMattressMat = mattressMat;
+    // Kenney 床换皮(自带床品,程序化被子随 primitive 一起被替换);file:// 回退保留原床+被子
+    loadFurnitureGLB("models/furniture/bedSingle.glb", g);
   }
 
   /* —— 被子:平滑曲面 + 正弦褶皱起伏 + 中间隆起 + 边缘自然下垂 + 头侧卷边(柔软布料感) —— */
@@ -669,7 +731,17 @@ window.Scene3D = (function () {
     buildFairyLights();   // 窗顶暖色串灯(自发光)
     buildReadingNook();   // 扩出的前右空地:落地灯(暖光)+ 圆地毯 + 坐垫
     buildBookshelf();     // 靠左墙的小书架 + 彩色书
+    buildPottedPlant();   // 阅读角旁新增盆栽(Kenney GLB,演示"加家具")
     buildWallArt();       // 左墙挂画
+  }
+
+  // 新增盆栽摆件:纯 GLB,无 primitive 兜底(file:// 下不显示,server/线上显示)
+  function buildPottedPlant() {
+    const g = new T.Group();
+    g.position.set(6.2, 0, 4.0);   // 阅读角右后,落地灯旁
+    scene.add(g);
+    refs.plantProp = g;
+    loadFurnitureGLB("models/furniture/pottedPlant.glb", g, { targetH: 1.3 });
   }
 
   // 暖色串灯:沿窗顶/后墙挂一串自发光小灯泡,正弦下垂成弧线
@@ -723,19 +795,23 @@ window.Scene3D = (function () {
     const shadeMat = mat(0xffcf9a, { rough: 0.5, emissive: 0xff9a4a, emi: 0.5 });
     const shade = new T.Mesh(new T.CylinderGeometry(0.34, 0.46, 0.5, 20, 1, true), shadeMat);
     shade.position.set(0, 3.05, 0); shade.castShadow = false; lg.add(shade);
-    lg.add(place(new T.Mesh(new T.SphereGeometry(0.09, 12, 12), mat(0xfff0c8, { emissive: 0xffcf87, emi: 1.3, rough: 1 })), 0, 3.0, 0));
+    const bulb = place(new T.Mesh(new T.SphereGeometry(0.09, 12, 12), mat(0xfff0c8, { emissive: 0xffcf87, emi: 1.3, rough: 1 })), 0, 3.0, 0);
+    bulb.userData.keep = true; lg.add(bulb);   // 发光灯泡:换皮时保留(暖色辉光)
     const light = new T.PointLight(0xffb070, 1.3, 7.5, 2);
     light.position.set(0, 2.96, 0);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     light.shadow.camera.near = 0.2; light.shadow.camera.far = 9;
     light.shadow.bias = -0.0015;
+    light.userData.keep = true;   // 暖光池:核心氛围,换皮时必须保留
     lg.add(light);
     const flp = PARAMS.floorLamp;
     lg.position.set(flp.x, 0, flp.z);
     lg.scale.setScalar(flp.scale);
     scene.add(lg);
     refs.floorLamp = lg;
+    // Kenney 落地灯换皮:几何换成模型,暖光源(PointLight)+ 发光灯泡原位保留
+    loadFurnitureGLB("models/furniture/lampSquareFloor.glb", lg);
   }
 
   // 靠左墙的小书架 + 几本彩色书
@@ -769,6 +845,8 @@ window.Scene3D = (function () {
     g.scale.setScalar(bp.scale);
     scene.add(g);
     refs.bookshelf = g;
+    // Kenney 开放式书架换皮;file:// 回退保留原 primitive 书架
+    loadFurnitureGLB("models/furniture/bookcaseOpen.glb", g);
   }
 
   // 左墙挂画:画框 + 彩色画芯(微自发光,夜里不至于全黑)
