@@ -709,6 +709,11 @@ function bindUI() {
     else document.exitFullscreen?.();
   });
 
+  // 重置视角:把主场景相机平滑回正到默认机位(camera-controls)
+  $("resetViewBtn").addEventListener("click", () => {
+    if (window.Scene3D && Scene3D.resetView) Scene3D.resetView();
+  });
+
   // “更多”按钮(窄屏):向上弹出/收起次要按钮面板
   const dock = document.querySelector(".dock");
   const moreBtn = $("moreBtn");
