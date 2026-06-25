@@ -13,6 +13,7 @@
      · 书架/床/落地灯/盆栽来自 Kenney CC0 GLB(models/furniture/),经
        loadFurnitureGLB() 异步换皮:自动适配体量、落地居中、开阴影、保留灯光
        子物体(落地灯暖光池);加载失败(file:// 的 CORS)回退 primitive。
+     · 另有 additive 装饰摆件(床头柜+柜上盆栽、休闲椅),经同一管线加载。
      · 桌/椅/小人仍为 primitive(与桌面物件/人耦合,后续再换)。
    - 氛围:窗外雨(随雨声开关显隐)、灯光微尘、马克杯蒸汽
 
@@ -732,6 +733,7 @@ window.Scene3D = (function () {
     buildReadingNook();   // 扩出的前右空地:落地灯(暖光)+ 圆地毯 + 坐垫
     buildBookshelf();     // 靠左墙的小书架 + 彩色书
     buildPottedPlant();   // 阅读角旁新增盆栽(Kenney GLB,演示"加家具")
+    buildDecorProps();    // additive 装饰摆件:床头柜(+柜上盆栽)、休闲椅
     buildWallArt();       // 左墙挂画
   }
 
@@ -742,6 +744,32 @@ window.Scene3D = (function () {
     scene.add(g);
     refs.plantProp = g;
     loadFurnitureGLB("models/furniture/pottedPlant.glb", g, { targetH: 1.3 });
+  }
+
+  /* —— additive 装饰摆件(纯 GLB,只进 refs 不进编辑器;坐标为首版猜值,易调) ——
+     摆件落地居中、底面贴 group 原点,故"柜上放盆栽"的世界高度 = 柜的 targetH。 */
+  function buildDecorProps() {
+    // 床头柜:床 +x 侧、近床头(避开书架/书桌)
+    const ns = new T.Group();
+    ns.position.set(-1.7, 0, 2.4);
+    scene.add(ns);
+    refs.nightstand = ns;
+    loadFurnitureGLB("models/furniture/sideTableDrawers.glb", ns, { targetH: 1.0 });
+
+    // 柜上小盆栽:落在床头柜顶(y = 柜的 targetH 1.0)
+    const np = new T.Group();
+    np.position.set(-1.7, 1.0, 2.4);
+    scene.add(np);
+    refs.nightstandPlant = np;
+    loadFurnitureGLB("models/furniture/plantSmall2.glb", np, { targetH: 0.32 });
+
+    // 休闲椅:阅读角前缘,朝房间中心
+    const lc = new T.Group();
+    lc.position.set(4.4, 0, 1.5);
+    lc.rotation.y = Math.PI;
+    scene.add(lc);
+    refs.loungeChair = lc;
+    loadFurnitureGLB("models/furniture/loungeChair.glb", lc, { targetH: 1.4 });
   }
 
   // 暖色串灯:沿窗顶/后墙挂一串自发光小灯泡,正弦下垂成弧线
